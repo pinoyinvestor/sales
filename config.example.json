@@ -1,0 +1,16 @@
+{
+  "email": {
+    "imap": { "host": "mailcluster.loopia.se", "port": 993, "tls": true },
+    "smtp": { "host": "mailcluster.loopia.se", "port": 587, "secure": false },
+    "user": "info@example.com",
+    "pass": "your-password"
+  },
+  "database": { "path": "./data/sales.db" },
+  "tracking": {
+    "base_url": "https://yourdomain.com/api/sales/track",
+    "unsubscribe_url": "https://yourdomain.com/api/sales/unsubscribe"
+  },
+  "dashboard_api": { "port": 3200, "admin_key": "generate-a-random-key" },
+  "default_language": "sv",
+  "retention_days": 365
+}
