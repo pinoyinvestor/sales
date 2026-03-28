@@ -396,6 +396,14 @@ Action: ACTION|ROLE|NAME|action_type|{"json":"data"}|Förklaring
 
 SVARA NU:`
 
+    // Helper: fix role if Claude writes literal "ROLE" or "role" instead of actual role
+    function fixRole(role, name) {
+      if (role && role !== 'role' && role !== 'chat') return role
+      // Look up by name
+      const agent = allAgents.find(a => a.name.toLowerCase() === (name || '').toLowerCase())
+      return agent ? agent.role : role
+    }
+
     console.log(`[meeting-runner] Calling Claude (${selectedAgents.length} agents)...`)
     const response = await claudePrompt(prompt)
     console.log(`[meeting-runner] Response (${response.length} chars): ${response.substring(0, 200)}...`)
@@ -405,8 +413,9 @@ SVARA NU:`
 
     for (const entry of parsed) {
       if (entry.type === 'action') {
+        const resolvedRole = fixRole(entry.role, entry.name)
         const queueResult = await apiPost('/actions', {
-          agent_role: entry.role,
+          agent_role: resolvedRole,
           agent_name: entry.name,
           action_type: entry.actionType,
           action_data: JSON.stringify(entry.actionData),
@@ -415,14 +424,15 @@ SVARA NU:`
         })
         const icon = queueResult.error ? '✗' : '📋'
         await apiPost('/discussions', {
-          author_role: entry.role,
+          author_role: resolvedRole,
           author_name: entry.name,
           message: `${icon} ${entry.message} (i godkännande-kö)`,
           topic,
         })
       } else {
+        const resolvedRole = fixRole(entry.role, entry.name)
         await apiPost('/discussions', {
-          author_role: entry.role,
+          author_role: resolvedRole,
           author_name: entry.name,
           message: entry.message,
           topic,
