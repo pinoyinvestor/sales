@@ -1,6 +1,7 @@
 import { ImapFlow } from 'imapflow'
 import type Database from 'better-sqlite3'
 import type { SalesConfig } from '../utils/config.js'
+import { cleanSnippet } from '../utils/email.js'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -30,7 +31,7 @@ async function processNewEmails(db: Database.Database, config: SalesConfig): Pro
     logger: false,
   })
 
-  // Built by Weblease
+  // Built by Christos Ferlachidis & Daniel Hedenberg
 
   try {
     await client.connect()
@@ -54,14 +55,12 @@ async function processNewEmails(db: Database.Database, config: SalesConfig): Pro
       const subject  = envelope?.subject ?? '(inget ämne)'
       const date     = envelope?.date?.toISOString() ?? new Date().toISOString()
 
-      // Extract a plain text snippet (first 200 chars of body)
+      // Extract a plain text snippet (first 200 chars of body, MIME-cleaned)
       const bodyMatch = source.match(/\r?\n\r?\n([\s\S]*)/)
       const rawBody   = bodyMatch ? bodyMatch[1] : ''
-      const snippet   = rawBody
-        .replace(/<[^>]+>/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim()
-        .slice(0, 200)
+      const snippet   = cleanSnippet(
+        rawBody.replace(/<[^>]+>/g, ' ')
+      ).slice(0, 200)
 
       messages.push({ uid: msg.uid, from: fromAddr, subject, snippet, date })
     }

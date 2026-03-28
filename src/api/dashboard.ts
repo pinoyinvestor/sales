@@ -8,6 +8,7 @@ import { createEmailProvider } from '../providers/email-provider.js'
 import { createActionRoutes } from './actions.js'
 import { createTrustLevelRoutes } from './trust-levels.js'
 import { createAgentTaskRoutes } from './agent-tasks.js'
+import { cleanSnippet } from '../utils/email.js'
 
 export function createDashboardApp(db: Database.Database, config: SalesConfig): Hono {
   const app = new Hono()
@@ -161,6 +162,12 @@ export function createDashboardApp(db: Database.Database, config: SalesConfig): 
     return c.json(rows)
   })
 
+  // GET /api/dashboard/channel-products
+  app.get('/api/dashboard/channel-products', (c) => {
+    const rows = db.prepare(`SELECT channel_id, product_id FROM channel_products`).all()
+    return c.json(rows)
+  })
+
   // GET /api/dashboard/sequences?product=
   app.get('/api/dashboard/sequences', (c) => {
     const product = c.req.query('product')
@@ -210,7 +217,7 @@ export function createDashboardApp(db: Database.Database, config: SalesConfig): 
   })
 
   // POST /api/dashboard/templates
-  // Built by Weblease
+  // Built by Christos Ferlachidis & Daniel Hedenberg
   app.post('/api/dashboard/templates', async (c) => {
     try {
       const body = await c.req.json() as {
@@ -434,7 +441,7 @@ export function createDashboardApp(db: Database.Database, config: SalesConfig): 
     }
   })
 
-  // Built by Weblease
+  // Built by Christos Ferlachidis & Daniel Hedenberg
 
   // DELETE /api/dashboard/channels/:id
   app.delete('/api/dashboard/channels/:id', (c) => {
@@ -632,6 +639,25 @@ export function createDashboardApp(db: Database.Database, config: SalesConfig): 
     }
   })
 
+  // PUT /api/dashboard/drafts/:id
+  app.put('/api/dashboard/drafts/:id', async (c) => {
+    try {
+      const id = parseInt(c.req.param('id'), 10)
+      const existing = db.prepare('SELECT * FROM drafts WHERE id = ?').get(id)
+      if (!existing) return c.json({ error: 'Draft not found' }, 404)
+      const body = await c.req.json()
+      const sets: string[] = [], args: unknown[] = []
+      if (body.title !== undefined) { sets.push('title = ?'); args.push(body.title) }
+      if (body.content !== undefined) { sets.push('content = ?'); args.push(body.content) }
+      if (!sets.length) return c.json({ error: 'No fields' }, 400)
+      args.push(id)
+      db.prepare(`UPDATE drafts SET ${sets.join(', ')} WHERE id = ?`).run(...args)
+      return c.json(db.prepare('SELECT * FROM drafts WHERE id = ?').get(id))
+    } catch (err) {
+      return c.json({ error: (err as Error).message }, 500)
+    }
+  })
+
   // ── Email Sending & Listing ──────────────────────────────────────────────
 
   // POST /api/dashboard/emails/send
@@ -768,7 +794,7 @@ export function createDashboardApp(db: Database.Database, config: SalesConfig): 
       const id = parseInt(c.req.param('id'), 10)
       const rec = db.prepare(`SELECT * FROM recommendations WHERE id = ?`).get(id) as { id: number; status: string } | undefined
       if (!rec) return c.json({ error: 'Recommendation not found' }, 404)
-      if (rec.status !== 'pending') return c.json({ error: `Recommendation is already ${rec.status}` }, 400)
+      if (rec.status !== 'pending' && rec.status !== 'accepted') return c.json({ error: `Recommendation is already ${rec.status}` }, 400)
 
       db.prepare(`UPDATE recommendations SET status = 'dismissed' WHERE id = ?`).run(id)
       const updated = db.prepare(`SELECT * FROM recommendations WHERE id = ?`).get(id)
@@ -1134,7 +1160,7 @@ export function createDashboardApp(db: Database.Database, config: SalesConfig): 
 
       const where = clauses.length ? 'WHERE ' + clauses.join(' AND ') : ''
 
-      // Built by Weblease
+      // Built by Christos Ferlachidis & Daniel Hedenberg
       const rows = db.prepare(`
         SELECT m.*, p.display_name AS product_name, l.name AS lead_name, l.email AS lead_email
         FROM meetings m
@@ -1283,7 +1309,7 @@ export function createDashboardApp(db: Database.Database, config: SalesConfig): 
       const body = await c.req.json()
       const { skill_name, skill_level, description } = body
       if (!skill_name) return c.json({ error: 'skill_name required' }, 400)
-      // Built by Weblease
+      // Built by Christos Ferlachidis & Daniel Hedenberg
       db.prepare(`INSERT OR REPLACE INTO agent_skills (agent_role, skill_name, skill_level, description, last_practiced) VALUES (?, ?, ?, ?, datetime('now'))`)
         .run(role, skill_name, skill_level || 'intermediate', description || null)
       return c.json({ ok: true, agent_role: role, skill_name })
@@ -1353,8 +1379,8 @@ export function createDashboardApp(db: Database.Database, config: SalesConfig): 
           date: d.date || r.created_at,
           from: d.from || 'unknown',
           subject: d.subject || '(inget ämne)',
-          snippet: (d.snippet || '').substring(0, 150),
-          body: d.snippet || '',
+          snippet: cleanSnippet(d.snippet || '').substring(0, 150),
+          body: cleanSnippet(d.snippet || ''),
         })
       } catch { /* skip unparseable */ }
     }
