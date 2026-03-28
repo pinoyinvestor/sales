@@ -1359,6 +1359,32 @@ export function createDashboardApp(db: Database.Database, config: SalesConfig): 
   app.route('/api/dashboard/trust-levels', createTrustLevelRoutes(db))
   app.route('/api/dashboard/agent-tasks', createAgentTaskRoutes(db))
 
+  // POST /api/dashboard/brain/learnings — save a learning from agents
+  app.post('/api/dashboard/brain/learnings', async (c) => {
+    const body = await c.req.json() as {
+      agent_role?: string; category?: string; insight?: string
+      source?: string; product?: string
+    }
+    if (!body.category || !body.insight) return c.json({ error: 'category and insight required' }, 400)
+    let productId: number | null = null
+    if (body.product) {
+      const p = db.prepare('SELECT id FROM products WHERE name = ?').get(body.product) as { id: number } | undefined
+      if (p) productId = p.id
+    }
+    const existing = db.prepare(
+      'SELECT id, confidence FROM learnings WHERE agent_role IS ? AND product_id IS ? AND category = ? AND insight = ?'
+    ).get(body.agent_role || null, productId, body.category, body.insight) as { id: number; confidence: number } | undefined
+    if (existing) {
+      const newConf = Math.min(1.0, existing.confidence + 0.1)
+      db.prepare('UPDATE learnings SET confidence = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(newConf, existing.id)
+      return c.json({ id: existing.id, reinforced: true, confidence: newConf })
+    }
+    const result = db.prepare(
+      'INSERT INTO learnings (agent_role, product_id, category, insight, confidence, source) VALUES (?, ?, ?, ?, 0.5, ?)'
+    ).run(body.agent_role || null, productId, body.category, body.insight, body.source || 'manual')
+    return c.json({ id: result.lastInsertRowid, reinforced: false, confidence: 0.5 }, 201)
+  })
+
   // GET /api/dashboard/agent-profiles
   app.get('/api/dashboard/agent-profiles', (c) => {
     const rows = db.prepare('SELECT * FROM agent_profiles ORDER BY team, name').all()

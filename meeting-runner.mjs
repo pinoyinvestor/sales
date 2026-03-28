@@ -445,11 +445,56 @@ SVARA NU:`
       console.log('[meeting-runner] No parseable entries, posting raw response')
       await apiPost('/discussions', {
         author_role: 'coo',
-        author_name: 'COO',
+        author_name: 'Sofia',
         message: response.substring(0, 500),
         topic,
       })
     }
+
+    // ── Auto-learning: extract insights from the conversation ────────
+    try {
+      const learnPrompt = `Analysera denna AI-team-diskussion och extrahera 0-3 viktiga learnings (insikter) som teamet borde komma ihåg inför framtida diskussioner.
+
+DISKUSSION:
+Admin: ${newMsg.message}
+${parsed.map(e => `${e.name}: ${e.message}`).join('\n')}
+
+Returnera BARA learnings i detta format (en per rad), eller INGEN om inget nytt lärdes:
+LEARNING|agent_role|category|insight
+
+Kategorier: strategy, market_insight, customer_behavior, content_style, pricing, competitor, process, technical, legal
+
+Exempel:
+LEARNING|scout|market_insight|Tyska WordPress-byråer föredrar engelska i affärskommunikation
+LEARNING|secops|legal|3 av 5 leads saknar dokumenterat consent för marknadsföring
+
+VIKTIGT: Bara RIKTIGA insikter. Inte uppenbart. Inte fluff. Om diskussionen inte gav nya insikter, skriv INGEN.`
+
+      const learnResponse = await claudePrompt(learnPrompt)
+      const learnLines = learnResponse.split('\n').filter(l => l.startsWith('LEARNING|'))
+
+      for (const line of learnLines) {
+        const parts = line.split('|')
+        if (parts.length >= 4) {
+          const agentRole = parts[1].trim().toLowerCase()
+          const category = parts[2].trim()
+          const insight = parts.slice(3).join('|').trim()
+          if (insight.length > 10) {
+            await apiPost('/brain/learnings', {
+              agent_role: agentRole,
+              category,
+              insight,
+              source: 'meeting_discussion',
+              product: topic.split('-')[0] || null,
+            })
+            console.log(`[meeting-runner] Learning saved: [${agentRole}/${category}] ${insight.substring(0, 60)}`)
+          }
+        }
+      }
+    } catch (learnErr) {
+      console.log(`[meeting-runner] Auto-learn skipped: ${learnErr.message}`)
+    }
+
   } catch (e) {
     console.error(`[meeting-runner] Error:`, e.message)
   } finally {
