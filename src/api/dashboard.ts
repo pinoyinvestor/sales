@@ -1359,10 +1359,28 @@ export function createDashboardApp(db: Database.Database, config: SalesConfig): 
   app.route('/api/dashboard/trust-levels', createTrustLevelRoutes(db))
   app.route('/api/dashboard/agent-tasks', createAgentTaskRoutes(db))
 
-  // GET /api/dashboard/agent-profiles — list all 16 agent profiles
+  // GET /api/dashboard/agent-profiles
   app.get('/api/dashboard/agent-profiles', (c) => {
     const rows = db.prepare('SELECT * FROM agent_profiles ORDER BY team, name').all()
     return c.json(rows)
+  })
+
+  // PUT /api/dashboard/agent-profiles/:role — rename or update agent
+  app.put('/api/dashboard/agent-profiles/:role', async (c) => {
+    const role = c.req.param('role')
+    const existing = db.prepare('SELECT * FROM agent_profiles WHERE role = ?').get(role)
+    if (!existing) return c.json({ error: 'Agent not found' }, 404)
+    const body = await c.req.json() as { name?: string; avatar?: string; personality?: string; status?: string }
+    const sets: string[] = []
+    const args: (string | number)[] = []
+    if (body.name !== undefined) { sets.push('name = ?'); args.push(body.name) }
+    if (body.avatar !== undefined) { sets.push('avatar = ?'); args.push(body.avatar) }
+    if (body.personality !== undefined) { sets.push('personality = ?'); args.push(body.personality) }
+    if (body.status !== undefined) { sets.push('status = ?'); args.push(body.status) }
+    if (!sets.length) return c.json({ error: 'No fields to update' }, 400)
+    args.push(role)
+    db.prepare(`UPDATE agent_profiles SET ${sets.join(', ')} WHERE role = ?`).run(...args)
+    return c.json(db.prepare('SELECT * FROM agent_profiles WHERE role = ?').get(role))
   })
 
   // GET /api/dashboard/inbox — formatted inbox from activity_log

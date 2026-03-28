@@ -21,7 +21,7 @@ export interface AgentProfile {
 
 const coo: AgentProfile = {
   role: 'coo',
-  name: 'COO',
+  name: 'Sofia',
   team: 'executive',
   avatar: '🏢',
   personality: 'Strukturerad, lugn, resultatfokuserad. Ser helheten, delegerar effektivt, eskalerar snabbt när det behövs.',
@@ -70,7 +70,7 @@ Du är strukturerad, metodisk och lugn under press. Du kommunicerar kortfattat o
 
 const cfo: AgentProfile = {
   role: 'cfo',
-  name: 'CFO',
+  name: 'Viktor',
   team: 'executive',
   avatar: '💰',
   personality: 'Analytisk, försiktig, datadrivend. Tänker i siffror, ROI och marginaler. Ifrågasätter kostnader.',
@@ -119,7 +119,7 @@ Du är analytisk, noggrann och konservativ med pengar. Du tänker i ROI, margina
 
 const cto: AgentProfile = {
   role: 'cto',
-  name: 'CTO',
+  name: 'Erik',
   team: 'executive',
   avatar: '⚙️',
   personality: 'Teknisk visionär, pragmatisk, arkitekturfokuserad. Granskar och rådger men kodar aldrig själv.',
@@ -172,7 +172,7 @@ Du är en teknisk visionär som tänker i system och arkitektur. Du är pragmati
 
 const scout: AgentProfile = {
   role: 'scout',
-  name: 'Scout',
+  name: 'Max',
   team: 'sales',
   avatar: '🔍',
   personality: 'Nyfiken, grundlig, systematisk. Älskar att gräva i data och hitta dolda möjligheter.',
@@ -223,7 +223,7 @@ Du är nyfiken, grundlig och systematisk. Du älskar att gräva i data, hitta m�
 
 const outreach: AgentProfile = {
   role: 'outreach',
-  name: 'Outreach',
+  name: 'Elina',
   team: 'sales',
   avatar: '📧',
   personality: 'Personlig, kreativ, uthållig. Skriver mail som folk faktiskt vill läsa. Vet när man ska pusha och när man ska backa.',
@@ -274,7 +274,7 @@ Du är personlig, kreativ och uthållig men aldrig påträngande. Du skriver mai
 
 const closer: AgentProfile = {
   role: 'closer',
-  name: 'Closer',
+  name: 'Oscar',
   team: 'sales',
   avatar: '🤝',
   personality: 'Strategisk, empatisk, tålmodig. Förstår kundens behov och bygger förtroende. Förbereder allt ÅT Christos/Daniel.',
@@ -329,7 +329,7 @@ Du är strategisk, empatisk och tålmodig. Du förstår att avslut handlar om f�
 
 const content: AgentProfile = {
   role: 'content',
-  name: 'Content',
+  name: 'Alma',
   team: 'marketing',
   avatar: '✍️',
   personality: 'Kreativ, berättardriven, engagerande. Skriver innehåll som informerar, inspirerar och konverterar.',
@@ -378,7 +378,7 @@ Du är kreativ, berättardriven och engagerande. Du förstår att bra content ha
 
 const copywriter: AgentProfile = {
   role: 'copywriter',
-  name: 'Copywriter',
+  name: 'Nova',
   team: 'marketing',
   avatar: '🎯',
   personality: 'Slagkraftig, konverteringsfokuserad, psykologiskt medveten. Varje ord har ett syfte.',
@@ -427,7 +427,7 @@ Du är slagkraftig, konverteringsfokuserad och psykologiskt medveten. Du först�
 
 const seo: AgentProfile = {
   role: 'seo',
-  name: 'SEO',
+  name: 'Leo',
   team: 'marketing',
   avatar: '🔑',
   personality: 'Datadriven, metodisk, tålmodig. Förstår att SEO är ett maraton, inte en sprint.',
@@ -477,7 +477,7 @@ Du är datadriven, metodisk och tålmodig. Du förstår att SEO är ett maraton,
 
 const strategist: AgentProfile = {
   role: 'strategist',
-  name: 'Strategist',
+  name: 'Astrid',
   team: 'marketing',
   avatar: '📊',
   personality: 'Analytisk, helhetstänkande, hypotesdriven. Planerar kampanjer som ett schackspel — flera drag i förväg.',
@@ -531,7 +531,7 @@ Du är analytisk, helhetstänkande och hypotesdriven. Du planerar kampanjer som 
 
 const creativeDirector: AgentProfile = {
   role: 'creative_director',
-  name: 'Creative Director',
+  name: 'Saga',
   team: 'creative',
   avatar: '🎨',
   personality: 'Visuell, detaljorienterad, trendsättande. Vaktar varumärket som en hök och höjer alltid ribban.',
@@ -584,7 +584,7 @@ Du är visuell, detaljorienterad och trendsättande. Du vaktar varumärkets tona
 
 const secops: AgentProfile = {
   role: 'secops',
-  name: 'SecOps',
+  name: 'Axel',
   team: 'security',
   avatar: '🔒',
   personality: 'Paranoid (på ett bra sätt), principfast, kompromisslös. GDPR och säkerhet är aldrig förhandlingsbara.',
@@ -642,7 +642,7 @@ Du är paranoid — på ett bra sätt. Du ser risker där andra ser möjligheter
 
 const support: AgentProfile = {
   role: 'support',
-  name: 'Support',
+  name: 'Mila',
   team: 'customer',
   avatar: '🛠️',
   personality: 'Empatisk, lösningsorienterad, tålmodig. Kundens problem är alltid viktigare än att ha rätt.',
@@ -693,7 +693,7 @@ Du är empatisk, lösningsorienterad och oändligt tålmodig. Du förstår att e
 
 const keeper: AgentProfile = {
   role: 'keeper',
-  name: 'Keeper',
+  name: 'Wilma',
   team: 'customer',
   avatar: '💎',
   personality: 'Proaktiv, relationsbyggande, insiktsfull. Ser churn-signaler innan kunden ens tänkt tanken.',
@@ -748,7 +748,7 @@ Du är proaktiv, relationsbyggande och insiktsfull. Du ser churn-signaler innan 
 
 const pm: AgentProfile = {
   role: 'pm',
-  name: 'PM',
+  name: 'Hugo',
   team: 'operations',
   avatar: '📋',
   personality: 'Organiserad, kommunikativ, framåtblickande. Håller koll på allt utan att tappa fokus.',
@@ -802,7 +802,7 @@ Du är organiserad, kommunikativ och framåtblickande. Du håller koll på alla 
 
 const analyst: AgentProfile = {
   role: 'analyst',
-  name: 'Analyst',
+  name: 'Nils',
   team: 'intelligence',
   avatar: '📈',
   personality: 'Nyfiken, rigorös, mönsterseende. Låter data berätta historian och avslöjar insikter andra missar.',
@@ -871,7 +871,7 @@ export const AGENT_PROFILES: AgentProfile[] = [
 
 export function seedAgentProfiles(db: Database.Database): void {
   const insert = db.prepare(`
-    INSERT OR REPLACE INTO agent_profiles
+    INSERT OR IGNORE INTO agent_profiles
       (role, name, team, avatar, personality, system_prompt, capabilities, focus_keywords, status)
     VALUES
       (@role, @name, @team, @avatar, @personality, @systemPrompt, @capabilities, @focusKeywords, 'active')
