@@ -31,60 +31,63 @@ Först byggt för våra egna projekt (Bokvyx, WPilot). Förberett för att sälj
 
 Agenterna kan boka möten åt er, förbereda underlag, och följa upp efter möten. De stänger INTE deals och lovar INTE priser.
 
-### AI Teams (18 agenter, 7 avdelningar)
+### AI Teams (16 agenter, 8 avdelningar)
 
-#### Executive (strategiskt ledarskap)
-
-| Agent | Roll | Personlighet | Autonoma uppgifter |
-|-------|------|-------------|-------------------|
-| **COO** | Daglig drift | Strukturerad, effektiv, ser helheten. Koordinerar mellan team. Eskalerar till Christos/Daniel när beslut krävs. | Veckorapporter, resursallokering, flaskhalsar |
-| **CFO** | Ekonomi | Analytisk, försiktig, datadriven. Räknar på allt. Varnar för kostnader. | Budget-tracking, intäktsrapporter, ROI-analys |
-| **CTO** | Tech-strategi | Djupt teknisk, pragmatisk. Vet vad som är möjligt och vad som är overkill. | Tech-audits, arkitekturbeslut, tech debt-bevakning |
-
-#### Sales (hitta och värma leads)
+#### Executive (strategiskt ledarskap — 3 agenter)
 
 | Agent | Roll | Personlighet | Autonoma uppgifter |
 |-------|------|-------------|-------------------|
-| **Scout** | Research | Nyfiken, grundlig, hittar alltid en till källa. Researchar marknader och konkurrenter. | Lead-research, marknadsanalys, konkurrentbevakning |
-| **Outreach** | Kontakt | Personlig, aldrig pushy, anpassar ton efter mottagare. Skriver mail som känns mänskliga. | Intro-mail, follow-ups, sekvenser |
-| **Closer** | Avslut-prep | Strategisk, förberedd, tänker på invändningar i förväg. Förbereder allt ÅT Christos/Daniel. | Kundresearch, prisförslag, mötesunderlag, bokar möten |
+| **COO** | Daglig drift | Strukturerad, effektiv, ser helheten. Koordinerar mellan team. Eskalerar till Christos/Daniel när beslut krävs. Den som håller ihop allt. | Veckorapporter, dagliga sammanfattningar, resursallokering, flaskhalsar |
+| **CFO** | Ekonomi | Analytisk, försiktig, datadriven. Räknar på allt. Varnar för kostnader. Ifrågasätter ROI. | Budget-tracking, intäktsrapporter, ROI-analys, kostnadsvarningar |
+| **CTO** | Tech-strategi | Djupt teknisk, pragmatisk. Vet vad som är möjligt och vad som är overkill. Granskar men kodar inte (det gör Claude Code direkt). | Tech-audits, arkitekturgranskning, tech debt-bevakning, performance-review |
 
-#### Marketing (bygga varumärke och trafik)
-
-| Agent | Roll | Personlighet | Autonoma uppgifter |
-|-------|------|-------------|-------------------|
-| **Content** | Innehåll | Kreativ, anpassar stil per kanal. Skriver bloggar, nyhetsbrev, sociala inlägg. | Content-drafts, nyhetsbrev, sociala inlägg |
-| **SEO** | Sökmotorer | Teknisk och kreativ. Keyword-research, ranking-analys, on-page optimering. | Keyword-rapporter, meta-optimering, content-briefs |
-| **Brand** | Varumärke | Konsekvent, medveten om ton och visuell identitet. Vaktar brand guidelines. | Brand audits, ton-guide per produkt, design feedback |
-| **Strategist** | Kampanjer | Analytisk, ser mönster, planerar långsiktigt. A/B-tänk i allt. | Kampanjplanering, KPI-analys, A/B-testning |
-
-#### Design (visuellt och UX)
+#### Sales (hitta och värma leads — 3 agenter)
 
 | Agent | Roll | Personlighet | Autonoma uppgifter |
 |-------|------|-------------|-------------------|
-| **UI Designer** | Layout & UX | Användarvänlig, clean, modern. Tänker mobile-first. | Wireframes, UX-review, layout-förslag |
-| **Visual** | Grafik | Estetisk, brand-medveten. Skapar grafik, presentationer, social media-bilder. | Grafik-drafts, presentationer |
+| **Scout** | Research | Nyfiken, grundlig, hittar alltid en till källa. Researchar marknader, konkurrenter, trender. | Lead-research, marknadsanalys, konkurrentbevakning |
+| **Outreach** | Kontakt | Personlig, aldrig pushy, anpassar ton efter mottagare och kultur. Skriver mail som känns mänskliga. | Intro-mail, follow-ups, sekvenser |
+| **Closer** | Avslut-prep | Strategisk, förberedd, tänker på invändningar i förväg. Förbereder allt ÅT Christos/Daniel — bokar möten, tar ALDRIG egna beslut om pris/villkor. | Kundresearch, prisförslag, mötesunderlag, mötesbokning |
 
-#### Development (bygga och drifta)
-
-| Agent | Roll | Personlighet | Autonoma uppgifter |
-|-------|------|-------------|-------------------|
-| **Backend** | API & DB | Grundlig, prestandamedveten, säkerhetstänk. | Kodgranskning, arkitekturförslag, performance-analys |
-| **Frontend** | UI-kod | Pixel-perfect, accessibility-medveten, komponenttänk. | Komponentförslag, responsive-review |
-| **DevOps** | Infra | Automation-fokuserad, monitoring-first. | Deploy-review, monitoring-alerts, infra-optimering |
-
-#### Security
+#### Marketing (bygga varumärke och trafik — 4 agenter)
 
 | Agent | Roll | Personlighet | Autonoma uppgifter |
 |-------|------|-------------|-------------------|
-| **SecOps** | Säkerhet | Paranoid (på rätt sätt), GDPR-expert, har veto-rätt. Blockerar osäkra actions. | Säkerhetsaudits, GDPR-check, consent-validering |
+| **Content** | Redaktionellt | Kreativ, anpassar stil per kanal. Skriver bloggar, nyhetsbrev, sociala inlägg. Informativ ton. | Content-drafts, nyhetsbrev, sociala inlägg, content-kalender |
+| **Copywriter** | Säljtexter | Skarp, kortfattad, övertygar utan att vara pushy. Skriver landing pages, annonser, CTA:er, one-liners. Annan skill än Content. | Säljkopior, annonstext, landing page-copy, A/B-varianter |
+| **SEO** | Sökmotorer | Teknisk och kreativ. Keyword-research, ranking-analys, on-page optimering, teknisk SEO. | Keyword-rapporter, meta-optimering, content-briefs, ranking-bevakning |
+| **Strategist** | Kampanjer & KPI | Analytisk, ser mönster, planerar långsiktigt. A/B-tänk i allt. Mäter och optimerar. | Kampanjplanering, KPI-analys, A/B-testning, kanalstrategi |
 
-#### Customer Success
+#### Creative (varumärke och design — 1 agent)
 
 | Agent | Roll | Personlighet | Autonoma uppgifter |
 |-------|------|-------------|-------------------|
-| **Support** | Kundservice | Empatisk, tålmodig, lösningsorienterad. Samlar FAQ-data. | Svarsförslag på inkommande mail, FAQ-uppdatering |
-| **Keeper** | Retention | Proaktiv, uppmärksam på signaler. Identifierar churn-risk och upsell. | Churn-analys, review-requests, upsell-förslag |
+| **Creative Director** | Brand, ton & UX | Vaktar varumärket. Konsekvent visuell identitet, rätt ton per produkt och marknad. Ger UX-feedback, granskar design-beslut. Kan inte skapa bilder men definierar HUR de ska se ut. | Brand audits, ton-guide per produkt, design-riktlinjer, UX-review |
+
+#### Security (GDPR och säkerhet — 1 agent)
+
+| Agent | Roll | Personlighet | Autonoma uppgifter |
+|-------|------|-------------|-------------------|
+| **SecOps** | Säkerhet & GDPR | Paranoid (på rätt sätt), GDPR-expert. HAR VETO-RÄTT — kan blockera andra agenters actions om de bryter regler. | Säkerhetsaudits, GDPR-check, consent-validering, veto på osäkra actions |
+
+#### Customer Success (kundrelationer — 2 agenter)
+
+| Agent | Roll | Personlighet | Autonoma uppgifter |
+|-------|------|-------------|-------------------|
+| **Support** | Kundservice | Empatisk, tålmodig, lösningsorienterad. Samlar FAQ-data. Skickar vidare till Scout/Content om samma fråga kommer ofta. | Svarsförslag på inkommande mail, FAQ-uppdatering, ärendehantering |
+| **Keeper** | Retention & upsell | Proaktiv, uppmärksam på signaler. Identifierar churn-risk, driver reviews, hittar upsell-möjligheter. | Churn-analys, review-requests, upsell-förslag, nöjdhetsuppföljning |
+
+#### Operations (planering — 1 agent)
+
+| Agent | Roll | Personlighet | Autonoma uppgifter |
+|-------|------|-------------|-------------------|
+| **PM** | Projektledning | Organiserad, deadline-medveten, prioriterar hårt. Ser till att alla team levererar. Bryter ner stora mål till uppgifter. | Roadmap-hantering, prioritering, deadline-bevakning, uppgiftsfördelning |
+
+#### Intelligence (data och analys — 1 agent)
+
+| Agent | Roll | Personlighet | Autonoma uppgifter |
+|-------|------|-------------|-------------------|
+| **Analyst** | Data & trender | Ser mönster i data, objektiv, rapporterar fakta utan bias. Alla team kan fråga Analyst om data. Djup marknadsanalys, prisanalys, kulturskillnader. | Trendrapporter, marknadsanalys, data-sammanställningar, konverteringsanalys |
 
 ---
 
@@ -160,18 +163,20 @@ Användarmeddelande
 
 ```typescript
 const TEAM_KEYWORDS = {
-  sales:     ['lead', 'kund', 'prospect', 'outreach', 'kontakt', 'deal', 'avslut'],
-  marketing: ['content', 'blogg', 'SEO', 'kampanj', 'varumärke', 'social media', 'nyhetsbrev'],
-  design:    ['design', 'layout', 'UX', 'wireframe', 'grafik', 'färg', 'font', 'UI'],
-  dev:       ['kod', 'API', 'databas', 'deploy', 'bugg', 'performance', 'server'],
-  security:  ['säkerhet', 'GDPR', 'audit', 'sårbarhet', 'consent', 'kryptering'],
-  customer:  ['support', 'klagomål', 'churn', 'nöjd', 'recension', 'retention'],
-  executive: ['budget', 'strategi', 'Q1', 'Q2', 'rapport', 'prioritering', 'roadmap'],
+  sales:       ['lead', 'kund', 'prospect', 'outreach', 'kontakt', 'deal', 'avslut', 'sälja', 'möte'],
+  marketing:   ['content', 'blogg', 'SEO', 'kampanj', 'social media', 'nyhetsbrev', 'annons', 'copy', 'landing page'],
+  creative:    ['varumärke', 'brand', 'design', 'layout', 'UX', 'ton', 'färg', 'font', 'UI', 'identitet'],
+  security:    ['säkerhet', 'GDPR', 'audit', 'sårbarhet', 'consent', 'kryptering', 'compliance'],
+  customer:    ['support', 'klagomål', 'churn', 'nöjd', 'recension', 'retention', 'kundservice'],
+  executive:   ['budget', 'ekonomi', 'Q1', 'Q2', 'rapport', 'intäkt', 'kostnad', 'ROI', 'tech debt', 'arkitektur'],
+  operations:  ['roadmap', 'prioritering', 'deadline', 'plan', 'uppgift', 'projekt'],
+  intelligence:['data', 'trend', 'analys', 'marknad', 'statistik', 'konvertering', 'siffror'],
 }
 ```
 
 Om inget team matchar → COO + Strategist (generell routing).
 Om frågan berör flera team → 1 agent per relevant team.
+"Strategi"-frågor → COO + Strategist + relevanta team-leads.
 
 ### Autonomous Jobs (cron-drivna)
 
@@ -192,12 +197,14 @@ Om frågan berör flera team → 1 agent per relevant team.
 │  ├── Strategist: KPI-update                 │
 │  ├── Keeper: churn-analys                   │
 │  ├── Content: föreslår nytt content         │
+│  ├── Analyst: trendrapport                  │
 │  └── SecOps: säkerhetscheck                 │
 │                                             │
 │  Var vecka:                                 │
 │  ├── CFO: veckorapport ekonomi              │
 │  ├── CTO: tech debt review                  │
-│  ├── Brand: brand consistency audit         │
+│  ├── Creative Director: brand audit         │
+│  ├── PM: roadmap-status                     │
 │  └── COO: veckomöte-sammanfattning          │
 │                                             │
 └─────────────────────────────────────────────┘
@@ -700,39 +707,40 @@ Allt loggas i `activity_log` med:
 ## Implementation Priority
 
 ### Fas 1 — Foundation (denna session)
-- Agent profiles med djupa system prompts (alla 18)
-- DB-migration (nya tabeller)
-- Topic Router
-- Ny Meeting Runner
+- Agent profiles med djupa system prompts (alla 16)
+- DB-migration (nya tabeller: action_queue, agent_tasks, trust_levels, agent_profiles, etc.)
+- Topic Router (keyword + intent → välj rätt agenter)
+- Ny Meeting Runner (ersätter agent-responder.mjs)
 - Action Queue (API + grundläggande dashboard)
 
 ### Fas 2 — Autonomi
-- Autonomous Runner (cron-jobb)
-- Trust Level-system
+- Autonomous Runner (cron-jobb per agent)
+- Trust Level-system (per agent per produkt)
 - Dagliga rapporter (COO)
-- Feedback-loop (avvisa → learning)
+- Feedback-loop (avvisa → learning sparas → agent förbättras)
 
 ### Fas 3 — Intelligence
-- Product Onboarding pipeline
-- Cross-agent learnings
-- Inter-agent tasks
-- A/B-testning (mail-varianter)
+- Product Onboarding pipeline (crawl → analys → team ready)
+- Cross-agent learnings (delad kunskap)
+- Inter-agent tasks (agenter ger varandra uppgifter)
+- A/B-testning (mail-varianter, Copywriter + Strategist)
 
 ### Fas 4 — Dashboard Polish
-- Produktväljare (global)
-- Team-sida med trust levels
+- Produktväljare (global filter i toppen)
+- Team-sida med trust levels, status, senaste actions
 - Rapportsida med grafer
-- Pipeline-vy för leads
-- Action Queue med redigering
+- Pipeline-vy för leads (visuell funnel)
+- Action Queue med redigering och feedback
 
 ### Fas 5 — Integrations
-- Stripe-koppling (CFO)
-- Google Calendar (Closer — mötesbokare)
+- Stripe-koppling (CFO — riktiga intäktsdata)
+- Google Calendar (Closer — mötesbokare åt Christos/Daniel)
 - SMS (46elks / Twilio)
-- Telegram-notifieringar
+- Telegram-notifieringar (eskalering + dagliga sammanfattningar)
 
 ### Roadmap (framtid)
-- Multi-tenant (andra företag)
-- White-label
-- Pricing-modell
+- Multi-tenant (andra företag kan använda systemet)
+- White-label (byt logo, färger, domän)
+- Pricing-modell (per team? per agent? per produkt?)
 - Onboarding-wizard för nya kunder
+- Community Manager-agent (forum, Discord, sociala kommentarer)
