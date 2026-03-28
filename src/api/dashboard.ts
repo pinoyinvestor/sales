@@ -667,21 +667,6 @@ export function createDashboardApp(db: Database.Database, config: SalesConfig): 
     }
   })
 
-  // GET /api/dashboard/inbox?limit=20
-  app.get('/api/dashboard/inbox', (c) => {
-    const limit = Math.min(parseInt(c.req.query('limit') || '20', 10), 200)
-
-    const rows = db.prepare(`
-      SELECT a.id, a.lead_id, a.action, a.details, a.created_at
-      FROM activity_log a
-      WHERE a.action = 'email_received'
-      ORDER BY a.created_at DESC
-      LIMIT ?
-    `).all(limit)
-
-    return c.json(rows)
-  })
-
   // GET /api/dashboard/emails?product=&limit=
   app.get('/api/dashboard/emails', (c) => {
     const limit = Math.min(parseInt(c.req.query('limit') || '50', 10), 500)
@@ -1348,6 +1333,33 @@ export function createDashboardApp(db: Database.Database, config: SalesConfig): 
   app.get('/api/dashboard/agent-profiles', (c) => {
     const rows = db.prepare('SELECT * FROM agent_profiles ORDER BY team, name').all()
     return c.json(rows)
+  })
+
+  // GET /api/dashboard/inbox — formatted inbox from activity_log
+  app.get('/api/dashboard/inbox', (c) => {
+    const limit = Math.min(parseInt(c.req.query('limit') || '20', 10), 100)
+    const rows = db.prepare(`
+      SELECT id, details, created_at FROM activity_log
+      WHERE action = 'email_received' AND details IS NOT NULL
+      ORDER BY created_at DESC LIMIT ?
+    `).all(limit) as { id: number; details: string; created_at: string }[]
+
+    const emails: { id: number; date: string; from: string; subject: string; snippet: string; body: string }[] = []
+    for (const r of rows) {
+      try {
+        const d = JSON.parse(r.details) as { date?: string; from?: string; subject?: string; snippet?: string }
+        emails.push({
+          id: r.id,
+          date: d.date || r.created_at,
+          from: d.from || 'unknown',
+          subject: d.subject || '(inget ämne)',
+          snippet: (d.snippet || '').substring(0, 150),
+          body: d.snippet || '',
+        })
+      } catch { /* skip unparseable */ }
+    }
+
+    return c.json(emails)
   })
 
   return app
