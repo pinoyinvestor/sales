@@ -230,7 +230,7 @@ async function poll() {
 
     const topic = newMsg.topic || 'general'
 
-    const [allAgents, products, leads, learnings, history, channels, pendingActions, templates, sequences, knowledge] = await Promise.all([
+    const [allAgents, products, leads, learnings, history, channels, pendingActions, templates, sequences, knowledge, recentAllDiscussions, completedActions] = await Promise.all([
       apiFetch('/agent-profiles'),
       apiFetch('/products'),
       apiFetch('/leads?limit=15'),
@@ -241,6 +241,8 @@ async function poll() {
       apiFetch('/templates'),
       apiFetch('/sequences'),
       apiFetch('/brain/knowledge'),
+      apiFetch('/discussions?limit=30'),  // cross-topic memory
+      apiFetch('/actions?status=executed&limit=10'),
     ])
 
     if (!Array.isArray(allAgents) || allAgents.length === 0) {
@@ -292,6 +294,21 @@ async function poll() {
       : '(inga learnings)'
     const historyText = (history || []).map(m => `${m.author_name}: ${m.message}`).join('\n')
 
+    // Team memory — what's been discussed in OTHER topics + executed actions
+    const otherTopicMessages = (recentAllDiscussions || [])
+      .filter(m => m.topic !== topic && m.author_role !== 'admin')
+      .slice(0, 15)
+    const teamMemory = otherTopicMessages.length > 0
+      ? otherTopicMessages.map(m => `[${m.topic}] ${m.author_name}: ${m.message.substring(0, 120)}`).join('\n')
+      : '(inga tidigare diskussioner)'
+    const executedList = (completedActions || []).length > 0
+      ? (completedActions || []).map(a => {
+          let detail = ''
+          try { const d = JSON.parse(a.action_data); detail = d.title || d.description || '' } catch {}
+          return `- [${a.agent_name}] ${a.action_type}: ${detail}`.substring(0, 120)
+        }).join('\n')
+      : '(inga utförda actions)'
+
     // Channel status — what platforms are connected
     const connectedChannels = (channels || []).filter(c => c.enabled)
     const allChannelTypes = ['email', 'sms', 'facebook', 'instagram', 'linkedin', 'reddit', 'tiktok', 'wordpress_forum', 'google_business', 'webhook']
@@ -342,7 +359,13 @@ VIKTIGT: Om du föreslår att använda en PLATTFORM som INTE är kopplad, MEDDEL
 VÄNTANDE ACTIONS I KÖN (${pendingList.length} st):
 ${pendingInfo}
 
-KONVERSATION:
+TEAM-MINNE (viktigt som sagts/beslutats i ANDRA mötesrum):
+${teamMemory}
+
+UTFÖRDA ACTIONS (det som redan gjorts):
+${executedList}
+
+KONVERSATION I DETTA MÖTESRUM:
 ${historyText}
 
 NYTT MEDDELANDE FRÅN ADMIN:
@@ -355,6 +378,7 @@ REGLER:
 - Svenska om inte produkten kräver engelska
 - Agenterna hjälps åt och bygger på varandras resonemang
 - Var ärlig om begränsningar — om en kanal inte är kopplad, säg det
+- VIKTIGT: Referera till tidigare diskussioner och beslut från team-minnet om relevant. Upprepa inte saker som redan gjorts.
 
 ACTIONS DU KAN UTFÖRA (hamnar i godkännande-kö):
 - create_lead: {email, name?, company?, product_id, source}
