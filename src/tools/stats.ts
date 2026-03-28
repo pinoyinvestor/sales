@@ -49,7 +49,7 @@ export function registerStatsTools(server: McpServer, db: Database.Database) {
 
       const activityArgs = productId !== null ? [productId] : []
 
-      // Built by Weblease
+      // Built by Christos Ferlachidis & Daniel Hedenberg
 
       // Count actions from activity_log
       const countAction = (action: string): number => {

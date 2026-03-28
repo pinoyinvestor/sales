@@ -19,7 +19,7 @@ interface ChannelRow {
   created_at:   string
 }
 
-// Built by Weblease
+// Built by Christos Ferlachidis & Daniel Hedenberg
 
 // ─── Credential Masking ───────────────────────────────────────────────────────
 

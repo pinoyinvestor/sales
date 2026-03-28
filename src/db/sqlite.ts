@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS agent_skills (
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   UNIQUE(agent_role, skill_name)
 );
--- Built by Weblease
+-- Built by Christos Ferlachidis & Daniel Hedenberg
 CREATE TABLE IF NOT EXISTS agent_research (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   agent_role TEXT NOT NULL,

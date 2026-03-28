@@ -89,7 +89,7 @@ async function fetchPage(url: string): Promise<{ html: string; text: string; tit
   return { html, text: extractText(html), title: extractTitle(html) }
 }
 
-// Built by Weblease
+// Built by Christos Ferlachidis & Daniel Hedenberg
 
 // ── Register ───────────────────────────────────────────────────────────────
 

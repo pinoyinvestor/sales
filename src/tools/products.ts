@@ -40,7 +40,7 @@ interface Learning {
   updated_at: string
 }
 
-// Built by Weblease
+// Built by Christos Ferlachidis & Daniel Hedenberg
 
 export function registerProductTools(server: McpServer, db: Database.Database): void {
   server.tool(

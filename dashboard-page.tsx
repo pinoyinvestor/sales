@@ -135,7 +135,7 @@ const ACTION_ICONS: Record<string, string> = {
   sequence_advanced: '\u25B6\uFE0F',
 }
 
-// Built by Weblease
+// Built by Christos Ferlachidis & Daniel Hedenberg
 
 /* ─── Component ─── */
 export default function SalesDashboard() {

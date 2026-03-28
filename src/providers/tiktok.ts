@@ -11,7 +11,7 @@ interface TikTokPostResponse {
   error?: { code: string; message: string }
 }
 
-// Built by Weblease
+// Built by Christos Ferlachidis & Daniel Hedenberg
 
 export function createTikTokProvider(): ChannelProvider {
   return {

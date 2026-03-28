@@ -1,5 +1,5 @@
 #!/bin/bash
-# Built by Weblease
+# Built by Christos Ferlachidis & Daniel Hedenberg
 # Agent Responder — polls discussions for new user messages, responds as agents via claude CLI
 
 API="http://localhost:3210/api/dashboard"

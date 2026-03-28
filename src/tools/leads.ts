@@ -43,7 +43,7 @@ export function registerLeadTools(server: McpServer, db: Database.Database) {
 
       const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
 
-      // Built by Weblease
+      // Built by Christos Ferlachidis & Daniel Hedenberg
 
       const rows = db.prepare(`
         SELECT

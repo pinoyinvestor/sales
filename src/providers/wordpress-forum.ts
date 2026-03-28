@@ -26,7 +26,7 @@ interface WpTopicItem {
   date: string
 }
 
-// Built by Weblease
+// Built by Christos Ferlachidis & Daniel Hedenberg
 
 function basicAuth(username: string, password: string): string {
   return 'Basic ' + Buffer.from(`${username}:${password}`).toString('base64')

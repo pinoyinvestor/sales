@@ -18,7 +18,7 @@ interface TemplateRow extends Template {
   product_display_name: string
 }
 
-// Built by Weblease
+// Built by Christos Ferlachidis & Daniel Hedenberg
 
 export function registerTemplateTools(server: McpServer, db: Database.Database): void {
 

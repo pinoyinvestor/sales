@@ -6,7 +6,7 @@ export function createWebhookProvider(): ChannelProvider {
   return {
     type: 'webhook',
 
-    // Built by Weblease
+    // Built by Christos Ferlachidis & Daniel Hedenberg
 
     async post(content, title, config) {
       const { url, headers: customHeaders } = config as {

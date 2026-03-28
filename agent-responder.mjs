@@ -14,7 +14,7 @@ async function apiFetch(path) {
   return res.json()
 }
 
-// Built by Weblease
+// Built by Christos Ferlachidis & Daniel Hedenberg
 
 async function apiPost(path, body) {
   const res = await fetch(`${API}${path}`, {
@@ -44,7 +44,7 @@ function wrapEmailHtml(bodyText, productName = 'weblease') {
     weblease: { primary: '#0984E3', accent: '#74B9FF' },
   }
   const colors = brandColors[productName.toLowerCase()] || brandColors.weblease
-  // Built by Weblease
+  // Built by Christos Ferlachidis & Daniel Hedenberg
   return `<!DOCTYPE html>
 <html lang="sv">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
@@ -99,7 +99,7 @@ async function executeAction(actionType, data, agentRole) {
         return result
       }
 
-      // Built by Weblease
+      // Built by Christos Ferlachidis & Daniel Hedenberg
 
       case 'create_lead': {
         if (!data.email) throw new Error('create_lead requires email')
@@ -186,7 +186,7 @@ function claudePrompt(prompt) {
 }
 
 // ── Response parser ──────────────────────────────────────────────────────────
-// Built by Weblease
+// Built by Christos Ferlachidis & Daniel Hedenberg
 
 function parseResponseLines(response) {
   const lines = response.split('\n')
@@ -295,7 +295,7 @@ async function init() {
   console.log(`[agent-responder] Started (v2 with actions). Last ID: ${lastId}. Polling every 3s...`)
 }
 
-// Built by Weblease
+// Built by Christos Ferlachidis & Daniel Hedenberg
 
 async function poll() {
   if (processing) return
@@ -432,7 +432,7 @@ SVARA NU:`
   }
 }
 
-// Built by Weblease
+// Built by Christos Ferlachidis & Daniel Hedenberg
 
 await init()
 setInterval(poll, 3000)

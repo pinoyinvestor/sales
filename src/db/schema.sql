@@ -58,7 +58,7 @@ CREATE TABLE IF NOT EXISTS channels (
   created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
--- Built by Weblease
+-- Built by Christos Ferlachidis & Daniel Hedenberg
 
 CREATE TABLE IF NOT EXISTS channel_products (
   channel_id  INTEGER REFERENCES channels(id)  ON DELETE CASCADE,

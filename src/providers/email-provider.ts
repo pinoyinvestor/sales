@@ -40,7 +40,7 @@ export interface SendResult {
   messageId: string
 }
 
-// Built by Weblease
+// Built by Christos Ferlachidis & Daniel Hedenberg
 
 // ─── Email Provider Factory ───────────────────────────────────────────────────
 

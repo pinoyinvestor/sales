@@ -1126,6 +1126,9 @@ export function createDashboardApp(db: Database.Database, config: SalesConfig): 
   app.get('/api/dashboard/meetings/upcoming', (c) => {
     try {
       const days = parseInt(c.req.query('days') || '7', 10)
+      const product = c.req.query('product')
+      const productClause = product ? `AND p.name = ?` : ''
+      const args: (string | number)[] = product ? [days, product] : [days]
       const rows = db.prepare(`
         SELECT m.*, p.display_name AS product_name, l.name AS lead_name, l.email AS lead_email
         FROM meetings m
@@ -1133,8 +1136,9 @@ export function createDashboardApp(db: Database.Database, config: SalesConfig): 
         LEFT JOIN leads l ON l.id = m.lead_id
         WHERE m.status IN ('confirmed', 'proposed')
           AND m.date BETWEEN date('now') AND date('now', '+' || ? || ' days')
+          ${productClause}
         ORDER BY m.date ASC, m.time ASC
-      `).all(days)
+      `).all(...args)
       return c.json(rows)
     } catch (err) {
       return c.json({ error: (err as Error).message }, 500)
@@ -1364,11 +1368,14 @@ export function createDashboardApp(db: Database.Database, config: SalesConfig): 
   // GET /api/dashboard/inbox — formatted inbox from activity_log
   app.get('/api/dashboard/inbox', (c) => {
     const limit = Math.min(parseInt(c.req.query('limit') || '20', 10), 100)
+    const product = c.req.query('product')
+    const productClause = product ? `AND product_id = (SELECT id FROM products WHERE name = ?)` : ''
+    const args: (string | number)[] = product ? [product, limit] : [limit]
     const rows = db.prepare(`
       SELECT id, details, created_at FROM activity_log
-      WHERE action = 'email_received' AND details IS NOT NULL
+      WHERE action = 'email_received' AND details IS NOT NULL ${productClause}
       ORDER BY created_at DESC LIMIT ?
-    `).all(limit) as { id: number; details: string; created_at: string }[]
+    `).all(...args) as { id: number; details: string; created_at: string }[]
 
     const emails: { id: number; date: string; from: string; subject: string; snippet: string; body: string }[] = []
     for (const r of rows) {

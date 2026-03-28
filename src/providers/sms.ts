@@ -16,7 +16,7 @@ export function createSmsProvider(): ChannelProvider {
   return {
     type: 'sms',
 
-    // Built by Weblease
+    // Built by Christos Ferlachidis & Daniel Hedenberg
 
     async post(content, _title, config) {
       const cfg = config as SmsConfig

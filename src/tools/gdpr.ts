@@ -37,7 +37,7 @@ export function registerGdprTools(server: McpServer, db: Database.Database): voi
         .prepare('SELECT * FROM leads WHERE email = ?')
         .all(email) as Lead[]
 
-      // Built by Weblease
+      // Built by Christos Ferlachidis & Daniel Hedenberg
 
       const unsubscribeLog = db
         .prepare("SELECT * FROM gdpr_log WHERE email = ? AND action = 'unsubscribed'")

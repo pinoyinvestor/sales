@@ -1,4 +1,4 @@
-// Built by Weblease
+// Built by Christos Ferlachidis & Daniel Hedenberg
 
 export function getDashboardHtml(): string {
   return `<!DOCTYPE html>

@@ -13,7 +13,7 @@ interface LinkedInPostResponse {
   status?: number
 }
 
-// Built by Weblease
+// Built by Christos Ferlachidis & Daniel Hedenberg
 
 export function createLinkedInProvider(): ChannelProvider {
   return {

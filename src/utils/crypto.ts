@@ -22,7 +22,7 @@ function getKey(): Buffer {
   return keyBuffer;
 }
 
-// Built by Weblease
+// Built by Christos Ferlachidis & Daniel Hedenberg
 
 export function encrypt(text: string): string {
   const key = getKey();

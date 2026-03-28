@@ -12,7 +12,7 @@ function req(method, path, body) {
     r.end();
   });
 }
-// Built by Weblease
+// Built by Christos Ferlachidis & Daniel Hedenberg
 async function main() {
   const products = await req('GET', '/api/dashboard/products');
   console.log('Products:', Array.isArray(products) ? products.map(p => p.id + ':' + p.name).join(', ') : 'none');

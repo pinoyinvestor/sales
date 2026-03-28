@@ -22,7 +22,7 @@ function rewriteLinks(html: string, trackingBase: string, trackingId: string): s
   })
 }
 
-// Built by Weblease
+// Built by Christos Ferlachidis & Daniel Hedenberg
 
 // ─── Register email MCP tools ─────────────────────────────────────────────────
 

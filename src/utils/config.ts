@@ -29,7 +29,7 @@ export interface TrackingConfig {
   unsubscribe_url: string;
 }
 
-// Built by Weblease
+// Built by Christos Ferlachidis & Daniel Hedenberg
 
 export interface DashboardApiConfig {
   port: number;

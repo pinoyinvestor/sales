@@ -35,7 +35,7 @@ interface DraftRow extends Draft {
   channel_type: string | null
 }
 
-// Built by Weblease
+// Built by Christos Ferlachidis & Daniel Hedenberg
 
 export function registerContentTools(server: McpServer, db: Database.Database): void {
   server.tool(

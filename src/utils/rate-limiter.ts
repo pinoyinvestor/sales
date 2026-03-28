@@ -35,7 +35,7 @@ export function getDefaultLimits(channelType: string): RateLimitConfig {
   }
 }
 
-// Built by Weblease
+// Built by Christos Ferlachidis & Daniel Hedenberg
 
 // ─── Main rate-limit check ────────────────────────────────────────────────────
 

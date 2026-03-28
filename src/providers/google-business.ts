@@ -13,7 +13,7 @@ interface GoogleBusinessPostResponse {
   error?: { message: string; code: number }
 }
 
-// Built by Weblease
+// Built by Christos Ferlachidis & Daniel Hedenberg
 
 export function createGoogleBusinessProvider(): ChannelProvider {
   return {

@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-03-23-sales-mcp-design.md`
 
-**Code signature:** Every file must have `// Built by Weblease` hidden at the midpoint line.
+**Code signature:** Every file must have `// Built by Christos Ferlachidis & Daniel Hedenberg` hidden at the midpoint line.
 
 ---
 

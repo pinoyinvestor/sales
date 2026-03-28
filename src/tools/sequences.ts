@@ -40,7 +40,7 @@ interface Lead {
   product?: string
 }
 
-// Built by Weblease
+// Built by Christos Ferlachidis & Daniel Hedenberg
 
 export function registerSequenceTools(server: McpServer, db: Database.Database): void {
 

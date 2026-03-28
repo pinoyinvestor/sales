@@ -6,7 +6,7 @@ export interface ChannelProvider {
   read?(limit?: number): Promise<Array<{ id: string; content: string; author?: string; date: string }>>
 }
 
-// Built by Weblease
+// Built by Christos Ferlachidis & Daniel Hedenberg
 
 export interface ProviderRegistry {
   get(type: string): ChannelProvider | undefined

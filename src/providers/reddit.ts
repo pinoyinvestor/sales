@@ -35,7 +35,7 @@ interface RedditListingResponse {
   }
 }
 
-// Built by Weblease
+// Built by Christos Ferlachidis & Daniel Hedenberg
 
 async function getAccessToken(config: RedditConfig): Promise<string> {
   const credentials = Buffer.from(`${config.client_id}:${config.client_secret}`).toString('base64')

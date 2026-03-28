@@ -24,7 +24,7 @@ interface FacebookFeedResponse {
   error?: { message: string }
 }
 
-// Built by Weblease
+// Built by Christos Ferlachidis & Daniel Hedenberg
 
 export function createFacebookProvider(): ChannelProvider {
   return {
