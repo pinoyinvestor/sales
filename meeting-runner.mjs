@@ -230,12 +230,14 @@ async function poll() {
 
     const topic = newMsg.topic || 'general'
 
-    const [allAgents, products, leads, learnings, history] = await Promise.all([
+    const [allAgents, products, leads, learnings, history, channels, pendingActions] = await Promise.all([
       apiFetch('/agent-profiles'),
       apiFetch('/products'),
       apiFetch('/leads?limit=10'),
       apiFetch('/brain/learnings'),
       apiFetch(`/discussions?topic=${encodeURIComponent(topic)}&limit=15`),
+      apiFetch('/channels'),
+      apiFetch('/actions?status=pending&limit=20'),
     ])
 
     if (!Array.isArray(allAgents) || allAgents.length === 0) {
@@ -257,6 +259,24 @@ async function poll() {
     const leadList = (leads || []).map(l => `- ${l.email} (${l.status}) ${l.name || ''} ${l.company || ''}`).join('\n')
     const historyText = (history || []).map(m => `${m.author_name}: ${m.message}`).join('\n')
 
+    // Channel status — what platforms are connected
+    const connectedChannels = (channels || []).filter(c => c.enabled)
+    const allChannelTypes = ['email', 'sms', 'facebook', 'instagram', 'linkedin', 'reddit', 'tiktok', 'wordpress_forum', 'google_business', 'webhook']
+    const connectedTypes = connectedChannels.map(c => c.type)
+    const disconnectedTypes = allChannelTypes.filter(t => !connectedTypes.includes(t))
+    const channelInfo = connectedChannels.length > 0
+      ? `KOPPLADE: ${connectedChannels.map(c => `${c.name} (${c.type})`).join(', ')}`
+      : 'INGA KANALER KOPPLADE'
+    const disconnectedInfo = disconnectedTypes.length > 0
+      ? `EJ KOPPLADE: ${disconnectedTypes.join(', ')}`
+      : '(alla kopplade)'
+
+    // Pending actions
+    const pendingList = (pendingActions || [])
+    const pendingInfo = pendingList.length > 0
+      ? pendingList.map(a => `- [${a.agent_name}] ${a.action_type}: ${(a.action_data || '').substring(0, 80)}`).join('\n')
+      : '(inga väntande)'
+
     const prompt = `Du är ett AI-företagsteam i ett strategimöte. Admin (Christos) har skrivit ett meddelande.
 
 NÄRVARANDE AGENTER (bara dessa svarar):
@@ -271,6 +291,14 @@ ${productList}
 LEADS:
 ${leadList}
 
+KANALER (plattformar teamet kan använda):
+${channelInfo}
+${disconnectedInfo}
+VIKTIGT: Om du föreslår att använda en PLATTFORM som INTE är kopplad, MEDDELA admin att den behöver kopplas först via Channels-sidan i dashboarden. Föreslå ALDRIG att posta på en plattform som inte är kopplad utan att nämna detta.
+
+VÄNTANDE ACTIONS I KÖN (${pendingList.length} st):
+${pendingInfo}
+
 KONVERSATION:
 ${historyText}
 
@@ -283,6 +311,7 @@ REGLER:
 - Specifika förslag med fakta, inte fluff
 - Svenska om inte produkten kräver engelska
 - Agenterna hjälps åt och bygger på varandras resonemang
+- Var ärlig om begränsningar — om en kanal inte är kopplad, säg det
 
 ACTIONS DU KAN UTFÖRA (hamnar i godkännande-kö):
 - create_lead: {email, name?, company?, product_id, source}
