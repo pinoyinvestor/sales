@@ -46,7 +46,6 @@ export function registerProductTools(server: McpServer, db: Database.Database): 
   server.tool(
     'list_products',
     'List all products available in the sales system',
-    {},
     async () => {
       const products = db.prepare('SELECT * FROM products ORDER BY name').all() as Product[]
       return {

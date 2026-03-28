@@ -3,7 +3,7 @@ import { z } from 'zod'
 import Database from 'better-sqlite3'
 import { ProviderRegistry } from '../providers/base.js'
 import { checkRateLimit } from '../utils/rate-limiter.js'
-import { decrypt } from '../utils/crypto.js'
+import { encrypt, decrypt } from '../utils/crypto.js'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -39,12 +39,49 @@ export function registerChannelTools(
   providerRegistry: ProviderRegistry
 ): void {
 
+  // ── Tool 0: create_channel ─────────────────────────────────────────────────
+
+  server.tool(
+    'create_channel',
+    'Create a new channel with encrypted credentials. Types: email, sms, facebook, instagram, reddit, wordpress_forum, webhook',
+    {
+      type:        z.string().describe('Channel type (email, sms, facebook, instagram, reddit, wordpress_forum, webhook)'),
+      name:        z.string().describe('Human-readable channel name'),
+      credentials: z.string().optional().describe('JSON string of credentials to encrypt and store (e.g. {"access_token":"...","page_id":"..."})'),
+      config:      z.string().optional().describe('JSON string of non-secret config'),
+      enabled:     z.boolean().optional().default(true).describe('Whether the channel is enabled'),
+    },
+    async ({ type, name, credentials, config, enabled }) => {
+      const validTypes = ['email', 'sms', 'facebook', 'instagram', 'reddit', 'wordpress_forum', 'webhook']
+      if (!validTypes.includes(type)) {
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({ error: 'INVALID_TYPE', message: `Type must be one of: ${validTypes.join(', ')}` }) }],
+        }
+      }
+
+      const existing = db.prepare('SELECT id FROM channels WHERE name = ?').get(name) as { id: number } | undefined
+      if (existing) {
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify({ error: 'DUPLICATE_NAME', message: `Channel "${name}" already exists (id: ${existing.id})` }) }],
+        }
+      }
+
+      const encryptedCreds = credentials ? encrypt(credentials) : null
+      const result = db.prepare(
+        'INSERT INTO channels (type, name, credentials, config, enabled) VALUES (?, ?, ?, ?, ?)'
+      ).run(type, name, encryptedCreds, config || '{}', enabled ? 1 : 0)
+
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify({ success: true, id: result.lastInsertRowid, name, type, enabled }) }],
+      }
+    }
+  )
+
   // ── Tool 1: list_channels ──────────────────────────────────────────────────
 
   server.tool(
     'list_channels',
     'List all configured channels. Credentials are masked in the response.',
-    {},
     async () => {
       const rows = db
         .prepare('SELECT * FROM channels ORDER BY created_at DESC')

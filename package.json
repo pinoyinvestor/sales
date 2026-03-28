@@ -8,7 +8,7 @@
     "doc": "docs"
   },
   "scripts": {
-    "build": "tsup src/index.ts --format esm --dts --clean",
+    "build": "tsup src/index.ts --format esm --clean --external zod --external @modelcontextprotocol/sdk --external better-sqlite3 --external imapflow --external nodemailer --external hono --external @hono/node-server --external uuid",
     "dev": "tsup src/index.ts --format esm --watch",
     "test": "echo \"Error: no test specified\" && exit 1"
   },

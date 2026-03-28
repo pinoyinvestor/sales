@@ -140,9 +140,7 @@ export function registerTemplateTools(server: McpServer, db: Database.Database):
       template_id: z.number().optional().describe('Template ID (fastest lookup)'),
       product:     z.string().optional().describe('Product name (use with name for lookup)'),
       name:        z.string().optional().describe('Template name (use with product for lookup)'),
-      variables:   z
-        .record(z.string())
-        .describe('Key-value pairs to substitute for {{key}} placeholders'),
+      variables:   z.string().describe('JSON object of key-value pairs to substitute for {{key}} placeholders, e.g. {"name":"John","company":"Acme"}'),
     },
     async ({ template_id, product, name, variables }) => {
       let template: Template | undefined
@@ -192,8 +190,9 @@ export function registerTemplateTools(server: McpServer, db: Database.Database):
         }
       }
 
+      const vars: Record<string, string> = typeof variables === 'string' ? JSON.parse(variables) : variables
       const render = (text: string): string =>
-        text.replace(/\{\{(\w+)\}\}/g, (_, key: string) => variables[key] ?? `{{${key}}}`)
+        text.replace(/\{\{(\w+)\}\}/g, (_, key: string) => vars[key] ?? `{{${key}}}`)
 
       const subject = template.subject ? render(template.subject) : ''
       const content = render(template.content)
