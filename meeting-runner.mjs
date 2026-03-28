@@ -116,7 +116,11 @@ function parseResponse(response) {
   const parsed = []
   const hasFormatted = lines.some(l => /^(ACTION\|)?[a-z_]+\|/i.test(l.trim()))
 
-  if (!hasFormatted && response.trim().length > 5) {
+  // Also strip Chat:/Action: prefixes from the overall check
+  const cleanedLines = lines.map(l => l.trim().replace(/^(Chat|Action|Response):\s*/i, '').replace(/^[-*]\s*/, '').trim())
+  const hasFormatted2 = cleanedLines.some(l => /^(ACTION\|)?[a-z_]+\|/i.test(l))
+
+  if (!hasFormatted && !hasFormatted2 && response.trim().length > 5) {
     const match = response.match(/\*\*([A-Z_]+)\s*[\|:]\s*([^*]+)\*\*/i) || response.match(/^([A-Z][a-z]+):/m)
     const role = match ? match[1].toLowerCase().replace(/\s+/g, '_') : 'coo'
     const name = match ? (match[2] || match[1]).trim() : 'COO'
@@ -128,7 +132,11 @@ function parseResponse(response) {
   // Built by Christos Ferlachidis & Daniel Hedenberg
 
   for (const line of lines) {
-    const trimmed = line.trim()
+    // Strip common prefixes Claude adds before the format
+    let trimmed = line.trim()
+      .replace(/^(Chat|Action|Response):\s*/i, '')
+      .replace(/^[-*]\s*/, '')
+      .trim()
     if (!trimmed.includes('|')) continue
 
     if (trimmed.startsWith('ACTION|')) {
@@ -178,11 +186,8 @@ function parseResponse(response) {
 
 function claudePrompt(prompt) {
   return new Promise((resolve, reject) => {
-    const tmpFile = '/tmp/meeting-prompt-' + Date.now() + '.txt'
-    writeFileSync(tmpFile, prompt)
-
     const proc = spawn('/home/christaras9126/.local/bin/claude', [
-      '-p', `Read and follow instructions in ${tmpFile}`, '--max-turns', '1', '--model', 'sonnet',
+      '-p', prompt, '--max-turns', '1', '--model', 'sonnet',
     ], {
       env: { ...process.env, HOME: '/home/christaras9126' },
       timeout: 90000,
@@ -194,14 +199,10 @@ function claudePrompt(prompt) {
     proc.stdout.on('data', d => { out += d })
     proc.stderr.on('data', d => { err += d })
     proc.on('close', code => {
-      try { unlinkSync(tmpFile) } catch {}
       if (code === 0 && out.trim()) resolve(out.trim())
       else reject(new Error(err || `exit ${code}`))
     })
-    proc.on('error', e => {
-      try { unlinkSync(tmpFile) } catch {}
-      reject(e)
-    })
+    proc.on('error', reject)
   })
 }
 
