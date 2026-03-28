@@ -32,6 +32,8 @@ import { createGoogleBusinessProvider } from './providers/google-business.js'
 
 import { createDashboardApp } from './api/dashboard.js'
 import { startInboxReader, stopInboxReader } from './workers/inbox-reader.js'
+import { startAutonomousRunner, stopAutonomousRunner } from './workers/autonomous-runner.js'
+import { startActionExecutor, stopActionExecutor } from './workers/action-executor.js'
 
 const basePath =
   process.env.SALES_MCP_BASE ||
@@ -93,8 +95,10 @@ try {
   console.error('Dashboard port unavailable, MCP tools still active')
 }
 
-// Start inbox reader worker
+// Start workers
 startInboxReader(db, config)
+startAutonomousRunner(db, config)
+startActionExecutor(db, config)
 
 async function main() {
   const transport = new StdioServerTransport()
@@ -103,6 +107,8 @@ async function main() {
 main().catch(console.error)
 
 process.on('SIGINT', () => {
+  stopActionExecutor()
+  stopAutonomousRunner()
   stopInboxReader()
   closeDb()
   process.exit(0)
