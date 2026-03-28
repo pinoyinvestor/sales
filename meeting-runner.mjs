@@ -230,20 +230,31 @@ async function poll() {
 
     const topic = newMsg.topic || 'general'
 
-    const [allAgents, products, leads, learnings, history, channels, pendingActions, templates, sequences, knowledge, recentAllDiscussions, completedActions] = await Promise.all([
+    // Detect product from topic prefix (e.g. "bokvyx-strategy" → "bokvyx")
+    const allProducts = await apiFetch('/products')
+    const productNames = (allProducts || []).map(p => p.name)
+    const topicProduct = productNames.find(name => topic.startsWith(name + '-')) || ''
+    const prodFilter = topicProduct ? `&product=${encodeURIComponent(topicProduct)}` : ''
+    const activeProduct = topicProduct ? (allProducts || []).find(p => p.name === topicProduct) : null
+
+    if (topicProduct) {
+      console.log(`[meeting-runner] Product context: ${topicProduct}`)
+    }
+
+    const [allAgents, leads, learnings, history, channels, pendingActions, templates, sequences, knowledge, recentAllDiscussions, completedActions] = await Promise.all([
       apiFetch('/agent-profiles'),
-      apiFetch('/products'),
-      apiFetch('/leads?limit=15'),
-      apiFetch('/brain/learnings'),
+      apiFetch('/leads?limit=15' + prodFilter),
+      apiFetch('/brain/learnings' + (topicProduct ? `?product=${topicProduct}` : '')),
       apiFetch(`/discussions?topic=${encodeURIComponent(topic)}&limit=15`),
       apiFetch('/channels'),
-      apiFetch('/actions?status=pending&limit=20'),
-      apiFetch('/templates'),
-      apiFetch('/sequences'),
-      apiFetch('/brain/knowledge'),
-      apiFetch('/discussions?limit=30'),  // cross-topic memory
+      apiFetch('/actions?status=pending&limit=20' + (topicProduct ? `&product=${topicProduct}` : '')),
+      apiFetch('/templates' + (topicProduct ? `?product=${topicProduct}` : '')),
+      apiFetch('/sequences' + (topicProduct ? `?product=${topicProduct}` : '')),
+      apiFetch('/brain/knowledge' + (topicProduct ? `?product=${topicProduct}` : '')),
+      apiFetch('/discussions?limit=30'),
       apiFetch('/actions?status=executed&limit=10'),
     ])
+    const products = allProducts
 
     if (!Array.isArray(allAgents) || allAgents.length === 0) {
       console.log('[meeting-runner] No agent profiles found. Skipping.')
@@ -328,6 +339,12 @@ async function poll() {
       : '(inga väntande)'
 
     const prompt = `Du är ett AI-företagsteam i ett strategimöte. Admin (Christos) har skrivit ett meddelande.
+${activeProduct ? `\nAKTIVT PROJEKT: ${activeProduct.display_name} (${activeProduct.name})
+${activeProduct.description || ''}
+${activeProduct.pitch ? 'Pitch: ' + activeProduct.pitch : ''}
+${activeProduct.url ? 'URL: ' + activeProduct.url : ''}
+${activeProduct.pricing ? 'Priser: ' + activeProduct.pricing : ''}
+VIKTIGT: Allt ni diskuterar och föreslår gäller specifikt ${activeProduct.display_name}. Håll fokus på detta projekt.` : 'INGET SPECIFIKT PROJEKT VALT — generell diskussion.'}
 
 NÄRVARANDE AGENTER (bara dessa svarar):
 ${agentNames}
@@ -485,7 +502,7 @@ VIKTIGT: Bara RIKTIGA insikter. Inte uppenbart. Inte fluff. Om diskussionen inte
               category,
               insight,
               source: 'meeting_discussion',
-              product: topic.split('-')[0] || null,
+              product: topicProduct || null,
             })
             console.log(`[meeting-runner] Learning saved: [${agentRole}/${category}] ${insight.substring(0, 60)}`)
           }
