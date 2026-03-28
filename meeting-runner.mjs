@@ -230,14 +230,17 @@ async function poll() {
 
     const topic = newMsg.topic || 'general'
 
-    const [allAgents, products, leads, learnings, history, channels, pendingActions] = await Promise.all([
+    const [allAgents, products, leads, learnings, history, channels, pendingActions, templates, sequences, knowledge] = await Promise.all([
       apiFetch('/agent-profiles'),
       apiFetch('/products'),
-      apiFetch('/leads?limit=10'),
+      apiFetch('/leads?limit=15'),
       apiFetch('/brain/learnings'),
       apiFetch(`/discussions?topic=${encodeURIComponent(topic)}&limit=15`),
       apiFetch('/channels'),
       apiFetch('/actions?status=pending&limit=20'),
+      apiFetch('/templates'),
+      apiFetch('/sequences'),
+      apiFetch('/brain/knowledge'),
     ])
 
     if (!Array.isArray(allAgents) || allAgents.length === 0) {
@@ -255,8 +258,38 @@ async function poll() {
       return `### ${a.avatar} ${a.name} (${a.role}) — ${a.team}\n${a.personality}\n\n${promptExcerpt}`
     }).join('\n\n---\n\n')
 
-    const productList = (products || []).map(p => `- ${p.display_name} (${p.name}): ${p.description || ''} [id=${p.id}]`).join('\n')
-    const leadList = (leads || []).map(l => `- ${l.email} (${l.status}) ${l.name || ''} ${l.company || ''}`).join('\n')
+    // Full product info — agents need to know everything
+    const productList = (products || []).map(p => {
+      let info = `- ${p.display_name} (${p.name}) [id=${p.id}]`
+      if (p.description) info += `\n  Beskrivning: ${p.description}`
+      if (p.pitch) info += `\n  Pitch: ${p.pitch}`
+      if (p.features) info += `\n  Features: ${p.features}`
+      if (p.pricing) info += `\n  Priser: ${p.pricing}`
+      if (p.url) info += `\n  URL: ${p.url}`
+      if (p.language) info += `\n  Språk: ${p.language}`
+      return info
+    }).join('\n\n')
+
+    const leadList = (leads || []).map(l => {
+      let info = `- ${l.email} (${l.status})`
+      if (l.name) info += ` ${l.name}`
+      if (l.company) info += ` @ ${l.company}`
+      if (l.notes) info += ` — ${l.notes.substring(0, 100)}`
+      if (l.last_contacted_at) info += ` [kontaktad: ${l.last_contacted_at}]`
+      return info
+    }).join('\n')
+
+    // Templates, sequences, knowledge summaries
+    const templateList = (templates || []).length > 0
+      ? (templates || []).map(t => `- ${t.name} (${t.type}, ${t.language}) ${t.product_name || ''}`).join('\n')
+      : '(inga templates)'
+    const sequenceList = (sequences || []).length > 0
+      ? (sequences || []).map(s => `- ${s.name}: ${s.description || 'ingen beskrivning'} ${s.enabled ? '(AKTIV)' : '(PAUSAD)'}`).join('\n')
+      : '(inga sekvenser)'
+    const knowledgeCount = (knowledge || []).length
+    const learningList = (learnings || []).length > 0
+      ? (learnings || []).slice(0, 10).map(l => `- [${l.category}] ${l.insight} (confidence: ${l.confidence})`).join('\n')
+      : '(inga learnings)'
     const historyText = (history || []).map(m => `${m.author_name}: ${m.message}`).join('\n')
 
     // Channel status — what platforms are connected
@@ -285,11 +318,21 @@ ${agentNames}
 AGENTPROFILER:
 ${agentSections}
 
-PRODUKTER:
+PRODUKTER (fullständig info):
 ${productList}
 
-LEADS:
+LEADS (${(leads || []).length} st):
 ${leadList}
+
+EMAIL-TEMPLATES (${(templates || []).length} st):
+${templateList}
+
+OUTREACH-SEKVENSER (${(sequences || []).length} st):
+${sequenceList}
+
+KUNSKAPSBAS: ${knowledgeCount} inlägg i knowledge base
+LEARNINGS (${(learnings || []).length} st):
+${learningList}
 
 KANALER (plattformar teamet kan använda):
 ${channelInfo}
