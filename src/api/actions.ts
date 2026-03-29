@@ -45,7 +45,7 @@ export function createActionRoutes(db: Database.Database, _config: SalesConfig):
     return c.json(rows)
   })
 
-  // POST / — queue a new action
+  // POST / — queue a new action (with dedup)
   app.post('/', async (c) => {
     const body = await c.req.json() as {
       agent_role: string; agent_name: string; product_id?: number
@@ -53,6 +53,55 @@ export function createActionRoutes(db: Database.Database, _config: SalesConfig):
     }
     if (!body.agent_role || !body.action_type || !body.action_data) {
       return c.json({ error: 'agent_role, action_type, and action_data required' }, 400)
+    }
+
+    // Ensure action_data is a string
+    if (typeof body.action_data !== 'string') {
+      body.action_data = JSON.stringify(body.action_data)
+    }
+
+    // Hard limit: max 1 pending action per agent — must be approved/rejected first
+    const pendingForAgent = db.prepare(
+      `SELECT COUNT(*) as c FROM action_queue WHERE agent_role = ? AND status = 'pending'`
+    ).get(body.agent_role) as { c: number }
+    if (pendingForAgent.c >= 3) {
+      return c.json({
+        blocked: true,
+        message: `${body.agent_name || body.agent_role} har redan ${pendingForAgent.c} väntande actions (max 3). Godkänn eller avslå först.`,
+        pending_count: pendingForAgent.c,
+      }, 200)
+    }
+
+    // Built by Christos Ferlachidis & Daniel Hedenberg
+    // Dedup: check for similar pending action (same type + similar title/description)
+    let actionTitle = ''
+    try {
+      const parsed = JSON.parse(body.action_data)
+      actionTitle = (parsed.title || parsed.description || '').toLowerCase().trim()
+    } catch { /* not json, skip dedup */ }
+
+    if (actionTitle && actionTitle.length > 10) {
+      const pending = db.prepare(
+        `SELECT id, action_data FROM action_queue WHERE action_type = ? AND status = 'pending'`
+      ).all(body.action_type) as { id: number; action_data: string }[]
+
+      for (const existing of pending) {
+        try {
+          const existingData = JSON.parse(existing.action_data)
+          const existingTitle = (existingData.title || existingData.description || '').toLowerCase().trim()
+          if (!existingTitle) continue
+          // Check if titles share 60%+ words
+          const newWords = new Set(actionTitle.split(/\s+/).filter((w: string) => w.length > 2))
+          const existingWords = new Set(existingTitle.split(/\s+/).filter((w: string) => w.length > 2))
+          if (newWords.size === 0 || existingWords.size === 0) continue
+          let overlap = 0
+          for (const w of newWords) { if (existingWords.has(w)) overlap++ }
+          const similarity = overlap / Math.max(newWords.size, existingWords.size)
+          if (similarity >= 0.6) {
+            return c.json({ deduplicated: true, existing_id: existing.id, message: 'Similar action already pending' }, 200)
+          }
+        } catch { continue }
+      }
     }
 
     const result = db.prepare(`
@@ -123,6 +172,15 @@ export function createActionRoutes(db: Database.Database, _config: SalesConfig):
 
     const updated = db.prepare('SELECT * FROM action_queue WHERE id = ?').get(id)
     return c.json(updated)
+  })
+
+  // DELETE /:id
+  app.delete('/:id', (c) => {
+    const id = parseInt(c.req.param('id'), 10)
+    const existing = db.prepare('SELECT id FROM action_queue WHERE id = ?').get(id)
+    if (!existing) return c.json({ error: 'Action not found' }, 404)
+    db.prepare('DELETE FROM action_queue WHERE id = ?').run(id)
+    return c.json({ deleted: true, id })
   })
 
   return app

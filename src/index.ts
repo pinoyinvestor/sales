@@ -9,6 +9,7 @@ import { getDb, closeDb } from './db/sqlite.js'
 
 import { registerProductTools } from './tools/products.js'
 import { registerLeadTools } from './tools/leads.js'
+import { registerWordPressDetectTools } from './tools/wordpress-detect.js'
 import { registerGdprTools } from './tools/gdpr.js'
 import { registerContentTools } from './tools/content.js'
 import { registerTemplateTools } from './tools/templates.js'
@@ -34,6 +35,12 @@ import { createDashboardApp } from './api/dashboard.js'
 import { startInboxReader, stopInboxReader } from './workers/inbox-reader.js'
 import { startAutonomousRunner, stopAutonomousRunner } from './workers/autonomous-runner.js'
 import { startActionExecutor, stopActionExecutor } from './workers/action-executor.js'
+import { startWPilotMonitor, stopWPilotMonitor } from './workers/wpilot-monitor.js'
+import { startSequenceRunner, stopSequenceRunner } from './workers/sequence-runner.js'
+import { startEventBus, stopEventBus } from './workers/event-bus.js'
+import { startLeadImporter, stopLeadImporter } from './workers/lead-importer.js'
+import { startAgentScheduler, stopAgentScheduler } from './workers/agent-scheduler.js'
+import { createTrackingRoutes } from './workers/email-tracker.js'
 
 const basePath =
   process.env.SALES_MCP_BASE ||
@@ -75,6 +82,7 @@ const server = new McpServer({
 // Register all tools
 registerProductTools(server, db)
 registerLeadTools(server, db)
+registerWordPressDetectTools(server, db)
 registerGdprTools(server, db)
 registerContentTools(server, db)
 registerTemplateTools(server, db)
@@ -86,6 +94,11 @@ registerChannelTools(server, db, providers)
 
 // Start dashboard HTTP API
 const dashboardApp = createDashboardApp(db, config)
+
+// Mount tracking routes on the dashboard app
+const trackingRoutes = createTrackingRoutes(db)
+dashboardApp.route('/', trackingRoutes)
+
 try {
   const dashServer = serve({ fetch: dashboardApp.fetch, port: config.dashboard_api.port })
   dashServer.on('error', (err: Error) => {
@@ -99,6 +112,11 @@ try {
 startInboxReader(db, config)
 startAutonomousRunner(db, config)
 startActionExecutor(db, config)
+startWPilotMonitor(db)
+startSequenceRunner(db, config)
+startEventBus(db)
+startLeadImporter(db)
+startAgentScheduler(db, config)
 
 async function main() {
   const transport = new StdioServerTransport()
@@ -107,6 +125,11 @@ async function main() {
 main().catch(console.error)
 
 process.on('SIGINT', () => {
+  stopAgentScheduler()
+  stopLeadImporter()
+  stopEventBus()
+  stopSequenceRunner()
+  stopWPilotMonitor()
   stopActionExecutor()
   stopAutonomousRunner()
   stopInboxReader()

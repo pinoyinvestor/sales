@@ -111,19 +111,44 @@ function selectAgents(message, allAgents) {
 
 // ── Response Parser ─────────────────────────────────────────────────────────
 
-function parseResponse(response) {
+function parseResponse(response, allAgents) {
   const lines = response.split('\n')
   const parsed = []
-  const hasFormatted = lines.some(l => /^(ACTION\|)?[a-z_]+\|/i.test(l.trim()))
 
-  // Also strip Chat:/Action: prefixes from the overall check
+  // Resolve role from name or raw role string
+  function resolveRole(rawRole, name) {
+    const role = (rawRole || '').toLowerCase().replace(/\s+/g, '_')
+    // If role is a valid agent role, use it
+    if (allAgents && allAgents.find(a => a.role === role)) return role
+    // Try to find by name
+    if (name && allAgents) {
+      const byName = allAgents.find(a => a.name.toLowerCase() === name.toLowerCase())
+      if (byName) return byName.role
+    }
+    // Common aliases
+    const aliases = { coo: 'coo', cfo: 'cfo', cto: 'cto', role: 'coo', chat: 'coo', error: 'coo' }
+    return aliases[role] || 'coo'
+  }
+
+  function resolveName(role, rawName) {
+    if (rawName && rawName !== 'Chat' && rawName !== 'Error' && rawName !== 'ROLE') return rawName
+    if (allAgents) {
+      const agent = allAgents.find(a => a.role === role)
+      if (agent) return agent.name
+    }
+    return rawName || 'Sofia'
+  }
+
+  const hasFormatted = lines.some(l => /^(ACTION\|)?[a-z_]+\|/i.test(l.trim()))
   const cleanedLines = lines.map(l => l.trim().replace(/^(Chat|Action|Response):\s*/i, '').replace(/^[-*]\s*/, '').trim())
   const hasFormatted2 = cleanedLines.some(l => /^(ACTION\|)?[a-z_]+\|/i.test(l))
 
   if (!hasFormatted && !hasFormatted2 && response.trim().length > 5) {
     const match = response.match(/\*\*([A-Z_]+)\s*[\|:]\s*([^*]+)\*\*/i) || response.match(/^([A-Z][a-z]+):/m)
-    const role = match ? match[1].toLowerCase().replace(/\s+/g, '_') : 'coo'
-    const name = match ? (match[2] || match[1]).trim() : 'COO'
+    const rawRole = match ? match[1].toLowerCase().replace(/\s+/g, '_') : 'coo'
+    const rawName = match ? (match[2] || match[1]).trim() : ''
+    const role = resolveRole(rawRole, rawName)
+    const name = resolveName(role, rawName)
     const clean = response.replace(/\*\*[^*]+\*\*/g, '').replace(/^#+\s*/gm, '').replace(/\n{3,}/g, '\n\n').trim()
     if (clean.length > 5) parsed.push({ type: 'chat', role, name, message: clean.substring(0, 500) })
     return parsed
@@ -132,7 +157,6 @@ function parseResponse(response) {
   // Built by Christos Ferlachidis & Daniel Hedenberg
 
   for (const line of lines) {
-    // Strip common prefixes Claude adds before the format
     let trimmed = line.trim()
       .replace(/^(Chat|Action|Response):\s*/i, '')
       .replace(/^[-*]\s*/, '')
@@ -142,8 +166,10 @@ function parseResponse(response) {
     if (trimmed.startsWith('ACTION|')) {
       const parts = trimmed.substring(7).split('|')
       if (parts.length >= 5) {
-        const role = parts[0].trim().toLowerCase()
-        const name = parts[1].trim()
+        const rawRole = parts[0].trim().toLowerCase()
+        const rawName = parts[1].trim()
+        const role = resolveRole(rawRole, rawName)
+        const name = resolveName(role, rawName)
         const actionType = parts[2].trim()
         const remaining = parts.slice(3).join('|')
         let jsonStr = '', message = ''
@@ -170,11 +196,21 @@ function parseResponse(response) {
     } else {
       const parts = trimmed.split('|')
       if (parts.length >= 3) {
-        const role = parts[0].trim().toLowerCase()
-        const name = parts[1].trim()
+        const rawRole = parts[0].trim().toLowerCase()
+        const rawName = parts[1].trim()
+        const role = resolveRole(rawRole, rawName)
+        const name = resolveName(role, rawName)
         const message = parts.slice(2).join('|').trim()
         if (role && name && message && message.length > 2) {
           parsed.push({ type: 'chat', role, name, message })
+        }
+      } else if (parts.length === 2) {
+        // Handle Name|Message format (no role prefix)
+        const rawName = parts[0].trim()
+        const message = parts[1].trim()
+        const agent = allAgents && allAgents.find(a => a.name.toLowerCase() === rawName.toLowerCase())
+        if (agent && message.length > 2) {
+          parsed.push({ type: 'chat', role: agent.role, name: agent.name, message })
         }
       }
     }
@@ -187,7 +223,7 @@ function parseResponse(response) {
 function claudePrompt(prompt) {
   return new Promise((resolve, reject) => {
     const proc = spawn('/home/christaras9126/.local/bin/claude', [
-      '-p', prompt, '--max-turns', '1', '--model', 'sonnet',
+      '-p', prompt, '--max-turns', '3', '--model', 'sonnet',
     ], {
       env: { ...process.env, HOME: '/home/christaras9126' },
       timeout: 90000,
@@ -425,15 +461,26 @@ SVARA NU:`
     const response = await claudePrompt(prompt)
     console.log(`[meeting-runner] Response (${response.length} chars): ${response.substring(0, 200)}...`)
 
-    const parsed = parseResponse(response)
+    const parsed = parseResponse(response, allAgents)
     console.log(`[meeting-runner] Parsed ${parsed.length} entries`)
+
+    // Helper: get correct agent name from role
+    function fixName(role, rawName) {
+      const agent = allAgents.find(a => a.role === role)
+      if (agent) return agent.name
+      // If rawName looks like a real name (not a role), keep it
+      const roleWords = ['coo','cfo','cto','scout','outreach','closer','content','copywriter','seo','strategist','creative_director','secops','support','keeper','pm','analyst','chat','error','role','admin']
+      if (rawName && !roleWords.includes(rawName.toLowerCase())) return rawName
+      return agent?.name || rawName || 'Sofia'
+    }
 
     for (const entry of parsed) {
       if (entry.type === 'action') {
         const resolvedRole = fixRole(entry.role, entry.name)
+        const resolvedName = fixName(resolvedRole, entry.name)
         const queueResult = await apiPost('/actions', {
           agent_role: resolvedRole,
-          agent_name: entry.name,
+          agent_name: resolvedName,
           action_type: entry.actionType,
           action_data: JSON.stringify(entry.actionData),
           priority: entry.actionData.priority || 'medium',
@@ -442,15 +489,16 @@ SVARA NU:`
         const icon = queueResult.error ? '✗' : '📋'
         await apiPost('/discussions', {
           author_role: resolvedRole,
-          author_name: entry.name,
+          author_name: resolvedName,
           message: `${icon} ${entry.message} (i godkännande-kö)`,
           topic,
         })
       } else {
         const resolvedRole = fixRole(entry.role, entry.name)
+        const resolvedName = fixName(resolvedRole, entry.name)
         await apiPost('/discussions', {
           author_role: resolvedRole,
-          author_name: entry.name,
+          author_name: resolvedName,
           message: entry.message,
           topic,
         })

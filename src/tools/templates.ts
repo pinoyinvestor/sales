@@ -131,7 +131,90 @@ export function registerTemplateTools(server: McpServer, db: Database.Database):
     }
   )
 
-  // ── Tool 3: use_template ──────────────────────────────────────────────────
+  // ── Tool 3: create_ab_variant ──────────────────────────────────────────────
+
+  server.tool(
+    'create_ab_variant',
+    'Create an A/B test variant of an existing template. Creates a copy with a different subject line for split testing.',
+    {
+      template_id:   z.number().describe('ID of the original template to create a variant of'),
+      variant_name:  z.string().describe('Short name for this variant (e.g. "B", "urgent", "question")'),
+      subject:       z.string().describe('The alternative subject line to test'),
+      content:       z.string().optional().describe('Alternative content (optional — defaults to original)'),
+    },
+    async (params) => {
+      const original = db.prepare('SELECT * FROM templates WHERE id = ?').get(params.template_id) as Template | undefined
+      if (!original) {
+        return { content: [{ type: 'text' as const, text: JSON.stringify({ error: 'TEMPLATE_NOT_FOUND' }) }] }
+      }
+
+      const variantGroup = `ab_${original.id}`
+      const variantName = `${original.name} [${params.variant_name}]`
+
+      // Mark original as variant A if not already
+      db.prepare('UPDATE templates SET variant = COALESCE(variant, ?), variant_group = COALESCE(variant_group, ?) WHERE id = ?')
+        .run('A', variantGroup, original.id)
+
+      // Create variant
+      db.prepare(`
+        INSERT INTO templates (product_id, name, type, subject, content, language, variant, variant_group)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        original.product_id, variantName, original.type,
+        params.subject, params.content ?? original.content,
+        original.language, params.variant_name, variantGroup
+      )
+
+      const newId = (db.prepare('SELECT last_insert_rowid() as id').get() as { id: number }).id
+
+      return { content: [{ type: 'text' as const, text: JSON.stringify({
+        created: true, variant_id: newId, variant_group: variantGroup,
+        original_subject: original.subject, new_subject: params.subject,
+      }) }] }
+    }
+  )
+
+  // ── Tool 4: get_ab_results ───────────────────────────────────────────────
+
+  server.tool(
+    'get_ab_results',
+    'Get A/B test results for a template group — shows sent count, open rate, and click rate per variant.',
+    {
+      variant_group: z.string().optional().describe('Variant group ID (e.g. "ab_15"). If omitted, shows all active A/B tests.'),
+    },
+    async (params) => {
+      if (params.variant_group) {
+        const variants = db.prepare(`
+          SELECT t.id, t.name, t.subject, t.variant,
+            (SELECT COUNT(*) FROM email_log WHERE template_id = t.id AND status = 'sent') as sent,
+            (SELECT COUNT(*) FROM email_log WHERE template_id = t.id AND opened_at IS NOT NULL) as opens,
+            (SELECT COUNT(*) FROM email_log WHERE template_id = t.id AND clicked_at IS NOT NULL) as clicks
+          FROM templates t WHERE t.variant_group = ?
+          ORDER BY t.variant
+        `).all(params.variant_group) as { id: number; name: string; subject: string; variant: string; sent: number; opens: number; clicks: number }[]
+
+        const results = variants.map(v => ({
+          ...v,
+          open_rate: v.sent > 0 ? `${Math.round((v.opens / v.sent) * 100)}%` : 'N/A',
+          click_rate: v.sent > 0 ? `${Math.round((v.clicks / v.sent) * 100)}%` : 'N/A',
+        }))
+
+        return { content: [{ type: 'text' as const, text: JSON.stringify(results, null, 2) }] }
+      }
+
+      // Show all active A/B groups
+      const groups = db.prepare(`
+        SELECT variant_group, COUNT(*) as variants,
+          GROUP_CONCAT(DISTINCT variant) as variant_names
+        FROM templates WHERE variant_group IS NOT NULL
+        GROUP BY variant_group
+      `).all()
+
+      return { content: [{ type: 'text' as const, text: JSON.stringify(groups, null, 2) }] }
+    }
+  )
+
+  // ── Tool 5: use_template ──────────────────────────────────────────────────
 
   server.tool(
     'use_template',

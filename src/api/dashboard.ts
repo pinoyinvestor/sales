@@ -18,6 +18,80 @@ export function createDashboardApp(db: Database.Database, config: SalesConfig): 
   // Serve dashboard UI
   app.get('/', (c) => c.html(getDashboardHtml()))
 
+  // ── Public Inbound Lead Capture (no admin key needed, uses HMAC) ───────────
+  // POST /api/inbound/lead — called by weblease.se contact form
+  app.post('/api/inbound/lead', async (c) => {
+    const inboundKey = c.req.header('x-inbound-key')
+    if (inboundKey !== config.dashboard_api.admin_key) {
+      return c.json({ error: 'Unauthorized' }, 401)
+    }
+
+    const body = await c.req.json() as {
+      email?: string; name?: string; company?: string; phone?: string;
+      message?: string; product?: string; source?: string;
+    }
+
+    if (!body.email) {
+      return c.json({ error: 'email is required' }, 400)
+    }
+
+    // Check for existing lead
+    const existing = db.prepare('SELECT id, status FROM leads WHERE email = ?').get(body.email) as { id: number; status: string } | undefined
+
+    if (existing) {
+      // Update existing lead with new info
+      db.prepare(`UPDATE leads SET
+        name = COALESCE(?, name),
+        company = COALESCE(?, company),
+        phone = COALESCE(?, phone),
+        notes = COALESCE(notes || '\n' || ?, notes),
+        source_detail = 'inbound_form',
+        updated_at = datetime('now')
+        WHERE id = ?`
+      ).run(body.name ?? null, body.company ?? null, body.phone ?? null, body.message ?? null, existing.id)
+
+      db.prepare(`INSERT INTO activity_log (lead_id, action, details, created_at)
+        VALUES (?, 'inbound_lead_updated', ?, datetime('now'))`
+      ).run(existing.id, JSON.stringify({ source: body.source ?? 'contact_form', message: body.message?.substring(0, 200) }))
+
+      return c.json({ status: 'updated', lead_id: existing.id })
+    }
+
+    // Resolve product
+    let productId: number | null = null
+    if (body.product) {
+      const prod = db.prepare('SELECT id FROM products WHERE name = ?').get(body.product) as { id: number } | undefined
+      productId = prod?.id ?? null
+    }
+
+    // Create new lead
+    const result = db.prepare(`INSERT INTO leads (email, name, company, phone, product_id, source, source_detail, status, notes, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, 'inbound', ?, 'new', ?, datetime('now'), datetime('now'))`
+    ).run(body.email, body.name ?? null, body.company ?? null, body.phone ?? null, productId, body.source ?? 'contact_form', body.message ?? null)
+
+    const leadId = result.lastInsertRowid
+
+    db.prepare(`INSERT INTO activity_log (lead_id, action, details, created_at)
+      VALUES (?, 'inbound_lead_created', ?, datetime('now'))`
+    ).run(leadId, JSON.stringify({ source: body.source ?? 'contact_form', product: body.product }))
+
+    // Create high-priority recommendation for follow-up
+    db.prepare(`INSERT INTO recommendations (product_id, agent_role, priority, title, description, action_type, action_data, status, created_at)
+      VALUES (?, 'outreach', 'high', ?, ?, 'follow_up', ?, 'pending', datetime('now'))`
+    ).run(
+      productId,
+      `Inbound lead: ${body.name || body.email}`,
+      `Kontaktade oss via formulär${body.message ? ': "' + body.message.substring(0, 100) + '"' : ''}`,
+      JSON.stringify({ lead_id: leadId, email: body.email })
+    )
+
+    // Telegram notification
+    const { sendTelegram } = await import('../providers/telegram.js')
+    sendTelegram(`🎯 <b>INBOUND LEAD!</b>\n\n${body.name || body.email}\n${body.company || ''}\n${body.product ? `Produkt: ${body.product}` : ''}\n${body.message ? `"${body.message.substring(0, 150)}"` : ''}`).catch(() => {})
+
+    return c.json({ status: 'created', lead_id: leadId })
+  })
+
   // Auth middleware
   app.use('/api/*', async (c, next) => {
     const key = c.req.header('x-admin-key')
@@ -67,7 +141,7 @@ export function createDashboardApp(db: Database.Database, config: SalesConfig): 
 
   // GET /api/dashboard/activity?limit=50&product=
   app.get('/api/dashboard/activity', (c) => {
-    const limit   = Math.min(parseInt(c.req.query('limit') || '50', 10), 500)
+    const limit   = Math.min(parseInt(c.req.query('limit') || '50', 10), 2000)
     const product = c.req.query('product')
 
     if (product) {
@@ -94,7 +168,7 @@ export function createDashboardApp(db: Database.Database, config: SalesConfig): 
 
   // GET /api/dashboard/leads?product=&status=&limit=50
   app.get('/api/dashboard/leads', (c) => {
-    const limit   = Math.min(parseInt(c.req.query('limit') || '50', 10), 500)
+    const limit   = Math.min(parseInt(c.req.query('limit') || '50', 10), 2000)
     const product = c.req.query('product')
     const status  = c.req.query('status')
 
@@ -156,10 +230,34 @@ export function createDashboardApp(db: Database.Database, config: SalesConfig): 
     return c.json(rows)
   })
 
-  // GET /api/dashboard/channels
+  // GET /api/dashboard/channels?product=name
   app.get('/api/dashboard/channels', (c) => {
-    const rows = db.prepare(`SELECT * FROM channels ORDER BY type, name`).all()
-    return c.json(rows)
+    const product = c.req.query('product')
+    if (product) {
+      const prod = db.prepare('SELECT id FROM products WHERE name = ?').get(product) as any
+      if (prod) {
+        const rows = db.prepare(`
+          SELECT c.* FROM channels c
+          INNER JOIN channel_products cp ON cp.channel_id = c.id
+          WHERE cp.product_id = ?
+          ORDER BY c.type, c.name
+        `).all(prod.id)
+        return c.json(rows)
+      }
+    }
+    const rows = db.prepare(`SELECT * FROM channels ORDER BY type, name`).all() as any[]
+    // Attach product names to each channel
+    const cpRows = db.prepare(`
+      SELECT cp.channel_id, p.id AS product_id, p.name, p.display_name
+      FROM channel_products cp
+      JOIN products p ON p.id = cp.product_id
+    `).all() as { channel_id: number; product_id: number; name: string; display_name: string }[]
+    const cpMap: Record<number, { id: number; name: string; display_name: string }[]> = {}
+    for (const cp of cpRows) {
+      if (!cpMap[cp.channel_id]) cpMap[cp.channel_id] = []
+      cpMap[cp.channel_id].push({ id: cp.product_id, name: cp.name, display_name: cp.display_name })
+    }
+    return c.json(rows.map(r => ({ ...r, products: cpMap[r.id] || [] })))
   })
 
   // GET /api/dashboard/channel-products
@@ -593,6 +691,121 @@ export function createDashboardApp(db: Database.Database, config: SalesConfig): 
     }
   })
 
+  // GET /api/dashboard/leads/:id/activity
+  app.get('/api/dashboard/leads/:id/activity', (c) => {
+    const id = parseInt(c.req.param('id'), 10)
+    const rows = db.prepare(`
+      SELECT a.*, p.name AS product_name
+      FROM activity_log a
+      LEFT JOIN products p ON p.id = a.product_id
+      WHERE a.lead_id = ?
+      ORDER BY a.created_at DESC
+      LIMIT 50
+    `).all(id)
+    return c.json(rows)
+  })
+
+  // GET /api/dashboard/leads/:id/conversations
+  app.get('/api/dashboard/leads/:id/conversations', (c) => {
+    const id = parseInt(c.req.param('id'), 10)
+    const lead = db.prepare('SELECT email, name, company FROM leads WHERE id = ?').get(id) as any
+    if (!lead) return c.json([])
+
+    // Get all email activity for this lead (sent + received)
+    const rawEmails = db.prepare(`
+      SELECT a.id, a.action, a.details, a.created_at
+      FROM activity_log a
+      WHERE (a.lead_id = ? OR a.details LIKE ?)
+        AND a.action IN ('email_sent', 'email_received', 'sequence_email_sent')
+      ORDER BY a.created_at ASC
+    `).all(id, `%${lead.email}%`) as any[]
+
+    // Enrich with template content and decoded snippets
+    const emails = rawEmails.map((e: any) => {
+      let detail: any = {}
+      try { detail = JSON.parse(e.details || '{}') } catch {}
+
+      const enriched: any = {
+        id: e.id,
+        action: e.action,
+        created_at: e.created_at,
+        subject: detail.subject || null,
+        to: detail.to || null,
+        from: detail.from || null,
+        template_name: detail.template || null,
+        template_content: null,
+        reply_text: null,
+        message_id: detail.messageId || null,
+      }
+
+      // If sent via sequence/template, load the actual template HTML
+      if (detail.template) {
+        const tmpl = db.prepare('SELECT content, subject FROM templates WHERE name = ?').get(detail.template) as any
+        if (tmpl) {
+          // Replace variables in template
+          let html = tmpl.content
+          if (lead.name) html = html.replace(/\{\{name\}\}/g, lead.name)
+          if (lead.company) html = html.replace(/\{\{company\}\}/g, lead.company)
+          html = html.replace(/\{\{unsubscribe_url\}\}/g, '#')
+          enriched.template_content = html
+        }
+      }
+
+      // If received, try to get readable text from snippet
+      if (e.action === 'email_received' && detail.snippet) {
+        let text = detail.snippet
+
+        // Check if it's already readable text (ASCII-heavy)
+        const nonAscii = text.split('').filter((c: string) => c.charCodeAt(0) > 127).length
+        const isReadable = (nonAscii / Math.max(text.length, 1)) < 0.3
+
+        if (!isReadable) {
+          // Try base64 decode
+          try {
+            const decoded = Buffer.from(text, 'base64').toString('utf-8')
+            const decodedNonAscii = decoded.split('').filter((c: string) => c.charCodeAt(0) > 127).length
+            if ((decodedNonAscii / Math.max(decoded.length, 1)) < 0.3) {
+              text = decoded
+            } else {
+              text = '[Innehåll kunde inte avkodas]'
+            }
+          } catch {
+            text = '[Innehåll kunde inte avkodas]'
+          }
+        }
+
+        // Clean HTML tags
+        text = text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+        enriched.reply_text = text
+      }
+
+      return enriched
+    })
+
+    return c.json({ emails, lead_email: lead.email, lead_name: lead.name })
+  })
+
+  // GET /api/dashboard/leads/:id/research
+  app.get('/api/dashboard/leads/:id/research', (c) => {
+    const id = parseInt(c.req.param('id'), 10)
+    const rows = db.prepare(`
+      SELECT * FROM agent_research
+      WHERE findings LIKE '%"lead_id":' || ? || '%'
+      ORDER BY created_at DESC
+      LIMIT 10
+    `).all(id)
+    return c.json(rows)
+  })
+
+  // DELETE /api/dashboard/leads/:id
+  app.delete('/api/dashboard/leads/:id', (c) => {
+    const id = parseInt(c.req.param('id'), 10)
+    const existing = db.prepare('SELECT id FROM leads WHERE id = ?').get(id)
+    if (!existing) return c.json({ error: 'Lead not found' }, 404)
+    db.prepare('DELETE FROM leads WHERE id = ?').run(id)
+    return c.json({ deleted: true, id })
+  })
+
   // ── Draft Actions ────────────────────────────────────────────────────────
 
   // POST /api/dashboard/drafts/:id/approve
@@ -719,6 +932,91 @@ export function createDashboardApp(db: Database.Database, config: SalesConfig): 
       LIMIT ?
     `).all(limit)
     return c.json(rows)
+  })
+
+  // GET /api/dashboard/emails/all — unified inbox: sent + received + templates
+  app.get('/api/dashboard/emails/all', (c) => {
+    const limit = Math.min(parseInt(c.req.query('limit') || '100', 10), 2000)
+
+    const rows = db.prepare(`
+      SELECT a.id, a.action, a.details, a.lead_id, a.created_at
+      FROM activity_log a
+      WHERE a.action IN ('email_sent', 'email_received', 'sequence_email_sent')
+      ORDER BY a.created_at DESC
+      LIMIT ?
+    `).all(limit) as any[]
+
+    const emails = rows.map((r: any) => {
+      let d: any = {}
+      try { d = JSON.parse(r.details || '{}') } catch {}
+
+      const isSent = r.action === 'email_sent' || r.action === 'sequence_email_sent'
+
+      // Decode base64 snippet for received
+      let bodyText: string | null = null
+      if (!isSent && d.snippet) {
+        bodyText = d.snippet
+        const nonAsc = bodyText.split('').filter((c: string) => c.charCodeAt(0) > 127).length
+        if ((nonAsc / Math.max(bodyText.length, 1)) >= 0.3) {
+          try {
+            const dec = Buffer.from(bodyText, 'base64').toString('utf-8')
+            const decNonAsc = dec.split('').filter((c: string) => c.charCodeAt(0) > 127).length
+            bodyText = (decNonAsc / Math.max(dec.length, 1)) < 0.3 ? dec : '[Innehåll kunde inte avkodas]'
+          } catch { bodyText = '[Innehåll kunde inte avkodas]' }
+        }
+        bodyText = bodyText.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+      }
+
+      // Load template HTML for sent
+      let templateHtml: string | null = null
+      if (isSent && d.template) {
+        const tmpl = db.prepare('SELECT content FROM templates WHERE name = ?').get(d.template) as any
+        if (tmpl) {
+          let html = tmpl.content
+          // Try to fill in lead variables
+          if (r.lead_id) {
+            const lead = db.prepare('SELECT name, company FROM leads WHERE id = ?').get(r.lead_id) as any
+            if (lead) {
+              html = html.replace(/\{\{name\}\}/g, lead.name || '')
+              html = html.replace(/\{\{company\}\}/g, lead.company || '')
+            }
+          }
+          html = html.replace(/\{\{unsubscribe_url\}\}/g, '#')
+          html = html.replace(/\{\{name\}\}/g, d.to || '')
+          html = html.replace(/\{\{company\}\}/g, '')
+          templateHtml = html
+        }
+      }
+
+      // Get lead info
+      let leadName: string | null = null
+      const fromEmail = d.from || null
+      if (fromEmail) {
+        const lead = db.prepare('SELECT name, company FROM leads WHERE email = ?').get(fromEmail) as any
+        if (lead) leadName = lead.name || lead.company
+      }
+      if (!leadName && r.lead_id) {
+        const lead = db.prepare('SELECT name, company FROM leads WHERE id = ?').get(r.lead_id) as any
+        if (lead) leadName = lead.name || lead.company
+      }
+
+      return {
+        id: r.id,
+        type: isSent ? 'sent' : 'received',
+        action: r.action,
+        date: d.date || r.created_at,
+        from: isSent ? 'info@weblease.se' : (d.from || 'unknown'),
+        to: d.to || null,
+        subject: d.subject || '(inget ämne)',
+        template_name: d.template || null,
+        template_html: templateHtml,
+        body_text: bodyText,
+        lead_name: leadName,
+        lead_id: r.lead_id,
+      }
+    })
+
+    return c.json(emails)
   })
 
   // ── Recommendations ──────────────────────────────────────────────────────
@@ -967,7 +1265,7 @@ export function createDashboardApp(db: Database.Database, config: SalesConfig): 
 
   app.get('/api/dashboard/discussions', (c) => {
     const topic = c.req.query('topic')
-    const limit = Math.min(parseInt(c.req.query('limit') || '50', 10), 200)
+    const limit = Math.min(parseInt(c.req.query('limit') || '500', 10), 500)
 
     if (topic) {
       const rows = db.prepare('SELECT * FROM discussions WHERE topic = ? ORDER BY created_at ASC LIMIT ?').all(topic, limit)
@@ -981,10 +1279,43 @@ export function createDashboardApp(db: Database.Database, config: SalesConfig): 
   app.get('/api/dashboard/discussions/topics', (c) => {
     const rows = db.prepare(`
       SELECT topic, COUNT(*) as message_count, MAX(created_at) as last_message_at
-      FROM discussions WHERE topic IS NOT NULL
+      FROM discussions WHERE topic IS NOT NULL AND archived = 0
       GROUP BY topic ORDER BY last_message_at DESC
     `).all()
     return c.json(rows)
+  })
+
+  // Archive a topic — saves all messages to brain as learnings, then hides from list
+  // Built by Christos Ferlachidis & Daniel Hedenberg
+  app.delete('/api/dashboard/discussions/topics/:topic', async (c) => {
+    const topic = decodeURIComponent(c.req.param('topic'))
+    const messages = db.prepare('SELECT * FROM discussions WHERE topic = ? ORDER BY created_at ASC').all(topic) as any[]
+
+    if (messages.length === 0) {
+      return c.json({ error: 'Topic not found' }, 404)
+    }
+
+    // Save conversation summary to brain
+    const summary = messages
+      .filter((m: any) => m.author_role !== 'error')
+      .map((m: any) => `${m.author_name} (${m.author_role}): ${m.message}`)
+      .join('\n')
+
+    if (summary.length > 0) {
+      db.prepare(`INSERT INTO knowledge (product_id, type, title, content, source_url) VALUES (?, ?, ?, ?, ?)`)
+        .run(
+          messages[0].product_id || null,
+          'meeting_archive',
+          `Meeting: ${topic}`,
+          summary.substring(0, 10000),
+          'archived_meeting'
+        )
+    }
+
+    // Mark as archived (soft delete)
+    db.prepare('UPDATE discussions SET archived = 1 WHERE topic = ?').run(topic)
+
+    return c.json({ success: true, archived: messages.length, saved_to_brain: true })
   })
 
   app.post('/api/dashboard/discussions', async (c) => {
@@ -1421,22 +1752,390 @@ export function createDashboardApp(db: Database.Database, config: SalesConfig): 
       ORDER BY created_at DESC LIMIT ?
     `).all(...args) as { id: number; details: string; created_at: string }[]
 
-    const emails: { id: number; date: string; from: string; subject: string; snippet: string; body: string }[] = []
+    const emails: { id: number; date: string; from: string; subject: string; snippet: string; body: string; lead_id: number | null; lead_name: string | null }[] = []
     for (const r of rows) {
       try {
         const d = JSON.parse(r.details) as { date?: string; from?: string; subject?: string; snippet?: string }
+
+        // Smart decode snippet
+        let bodyText = d.snippet || ''
+        const nonAsc2 = bodyText.split('').filter((c: string) => c.charCodeAt(0) > 127).length
+        if ((nonAsc2 / Math.max(bodyText.length, 1)) >= 0.3) {
+          try {
+            const dec2 = Buffer.from(bodyText, 'base64').toString('utf-8')
+            const decNonAsc2 = dec2.split('').filter((c: string) => c.charCodeAt(0) > 127).length
+            bodyText = (decNonAsc2 / Math.max(dec2.length, 1)) < 0.3 ? dec2 : '[Innehåll kunde inte avkodas]'
+          } catch { bodyText = '[Innehåll kunde inte avkodas]' }
+        }
+        bodyText = cleanSnippet(bodyText)
+
+        // Match to lead by from-email
+        let leadId: number | null = null
+        let leadName: string | null = null
+        if (d.from) {
+          const lead = db.prepare('SELECT id, name, company FROM leads WHERE email = ?').get(d.from) as any
+          if (lead) {
+            leadId = lead.id
+            leadName = lead.name || lead.company || null
+          }
+        }
+
         emails.push({
           id: r.id,
           date: d.date || r.created_at,
           from: d.from || 'unknown',
           subject: d.subject || '(inget ämne)',
-          snippet: cleanSnippet(d.snippet || '').substring(0, 150),
-          body: cleanSnippet(d.snippet || ''),
+          snippet: bodyText.substring(0, 200),
+          body: bodyText,
+          lead_id: leadId,
+          lead_name: leadName,
         })
       } catch { /* skip unparseable */ }
     }
 
     return c.json(emails)
+  })
+
+  // ── Telegram Config ──────────────────────────────────────────────────
+
+  app.get('/api/dashboard/telegram', (c) => {
+    const tg = config.telegram || { bot_token: '', chat_id: '', enabled: false }
+    return c.json({
+      bot_token: tg.bot_token ? '***' + tg.bot_token.slice(-6) : '',
+      chat_id: tg.chat_id,
+      enabled: tg.enabled,
+    })
+  })
+
+  app.post('/api/dashboard/telegram', async (c) => {
+    const body = await c.req.json() as { bot_token?: string; chat_id?: string; enabled?: boolean }
+    const { readFileSync, writeFileSync } = await import('fs')
+    const { join } = await import('path')
+
+    const { dirname: pathDirname } = await import('path')
+    const { fileURLToPath } = await import('url')
+    const base = process.env.SALES_MCP_BASE ||
+      pathDirname(pathDirname(pathDirname(fileURLToPath(import.meta.url))))
+    const configPath = join(base, 'config.json')
+    const raw = JSON.parse(readFileSync(configPath, 'utf-8'))
+    if (!raw.telegram) raw.telegram = { bot_token: '', chat_id: '', enabled: false }
+
+    if (body.bot_token !== undefined) raw.telegram.bot_token = body.bot_token
+    if (body.chat_id !== undefined) raw.telegram.chat_id = body.chat_id
+    if (body.enabled !== undefined) raw.telegram.enabled = body.enabled
+
+    writeFileSync(configPath, JSON.stringify(raw, null, 2))
+
+    // Update runtime config
+    if (!config.telegram) (config as any).telegram = { bot_token: '', chat_id: '', enabled: false }
+    Object.assign(config.telegram!, raw.telegram)
+
+    return c.json({ ok: true, enabled: raw.telegram.enabled })
+  })
+
+  app.post('/api/dashboard/telegram/test', async (c) => {
+    const { sendTelegram } = await import('../providers/telegram.js')
+    const ok = await sendTelegram('🔔 <b>Test</b>\n\nSales MCP Telegram-notifieringar fungerar!')
+    return c.json({ ok, message: ok ? 'Test skickat!' : 'Misslyckades — kolla token och chat_id' })
+  })
+
+  // ── Daily Reports ────────────────────────────────────────────────────
+
+  app.get('/api/dashboard/reports', (c) => {
+    const limit = Math.min(parseInt(c.req.query('limit') || '50', 10), 200)
+    const product = c.req.query('product')
+    const agent = c.req.query('agent')
+
+    const conditions: string[] = []
+    const args: (string | number)[] = []
+
+    if (product) {
+      conditions.push('r.product_id = (SELECT id FROM products WHERE name = ?)')
+      args.push(product)
+    }
+    if (agent) {
+      conditions.push('r.agent_role = ?')
+      args.push(agent)
+    }
+
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
+
+    const rows = db.prepare(`
+      SELECT r.*, ap.name AS agent_name, ap.avatar
+      FROM daily_reports r
+      LEFT JOIN agent_profiles ap ON ap.role = r.agent_role
+      ${where}
+      ORDER BY r.created_at DESC
+      LIMIT ?
+    `).all(...args, limit)
+
+    return c.json(rows)
+  })
+
+  // ── Bulk Operations ──────────────────────────────────────────────────
+
+  // DELETE /api/dashboard/reports/bulk — clear old reports
+  app.delete('/api/dashboard/reports/bulk', async (c) => {
+    const body = await c.req.json().catch(() => ({})) as { before?: string }
+    if (body.before) {
+      const result = db.prepare('DELETE FROM daily_reports WHERE created_at < ?').run(body.before)
+      return c.json({ deleted: result.changes })
+    }
+    const result = db.prepare("DELETE FROM daily_reports WHERE created_at < datetime('now', '-7 days')").run()
+    return c.json({ deleted: result.changes })
+  })
+
+  // DELETE /api/dashboard/recommendations/bulk — clear old recommendations
+  app.delete('/api/dashboard/recommendations/bulk', async (c) => {
+    const result = db.prepare("DELETE FROM recommendations WHERE status = 'pending' AND created_at < datetime('now', '-2 days')").run()
+    return c.json({ deleted: result.changes })
+  })
+
+  // ── Sequence Assignment ──────────────────────────────────────────────
+
+  // POST /api/dashboard/leads/:id/sequence — assign lead to sequence
+  app.post('/api/dashboard/leads/:id/sequence', async (c) => {
+    const leadId = parseInt(c.req.param('id'), 10)
+    const body = await c.req.json() as { sequence_id: number | null }
+
+    const lead = db.prepare('SELECT id FROM leads WHERE id = ?').get(leadId)
+    if (!lead) return c.json({ error: 'Lead not found' }, 404)
+
+    if (body.sequence_id === null) {
+      db.prepare("UPDATE leads SET sequence_id = NULL, sequence_step = 0, sequence_paused = 0, updated_at = datetime('now') WHERE id = ?").run(leadId)
+    } else {
+      const seq = db.prepare('SELECT id FROM sequences WHERE id = ?').get(body.sequence_id)
+      if (!seq) return c.json({ error: 'Sequence not found' }, 404)
+      db.prepare("UPDATE leads SET sequence_id = ?, sequence_step = 0, sequence_paused = 0, updated_at = datetime('now') WHERE id = ?").run(body.sequence_id, leadId)
+    }
+
+    const updated = db.prepare('SELECT * FROM leads WHERE id = ?').get(leadId)
+    return c.json(updated)
+  })
+
+  // ── Email Tracking Stats ─────────────────────────────────────────────
+
+  app.get('/api/dashboard/tracking/stats', (c) => {
+    const sent = (db.prepare("SELECT COUNT(*) as c FROM email_tracking WHERE type = 'sent'").get() as { c: number }).c
+    const opened = (db.prepare("SELECT COUNT(*) as c FROM email_tracking WHERE type = 'open'").get() as { c: number }).c
+    const clicked = (db.prepare("SELECT COUNT(*) as c FROM email_tracking WHERE type = 'click'").get() as { c: number }).c
+    const openRate = sent > 0 ? Math.round((opened / sent) * 100) : 0
+    const clickRate = sent > 0 ? Math.round((clicked / sent) * 100) : 0
+
+    return c.json({ sent, opened, clicked, open_rate: openRate, click_rate: clickRate })
+  })
+
+  // ── Email Stats (comprehensive) ────────────────────────────────────────
+  // Built by Christos Ferlachidis & Daniel Hedenberg
+
+  app.get('/api/dashboard/email-stats', (c) => {
+    const q = (sql: string) => (db.prepare(sql).get() as { c: number }).c
+
+    const autoReplyFrom = ['MAILER-DAEMON', 'noreply', 'no-reply', 'postmaster', 'zendesk.com', 'notification.support', 'info@weblease.se', 'mail@weblease.se']
+    const autoReplySubj = ['ticket', 'autosvar', 'autoreply', 'auto-reply', 'automatische antwort', 'automatisch antwoord', 'out of office', 'abwesenheit', 'semester', 'account created', 'aktivera ditt', 'eingangsbestätigung', 'mottaget', 'received', 'ticket received']
+
+    const totalSent = q("SELECT COUNT(*) as c FROM activity_log WHERE action IN ('email_sent', 'sequence_email_sent')")
+    const totalReceived = q("SELECT COUNT(*) as c FROM activity_log WHERE action = 'email_received'")
+    const totalBounced = q("SELECT COUNT(*) as c FROM leads WHERE status = 'bounced'")
+    const totalOpened = q("SELECT COUNT(*) as c FROM email_tracking WHERE type = 'open' AND triggered_at IS NOT NULL")
+    const totalClicked = q("SELECT COUNT(*) as c FROM email_tracking WHERE type = 'click' AND triggered_at IS NOT NULL")
+
+    // Real replies (same logic as overview-stats)
+    const allReceived = db.prepare(
+      "SELECT details FROM activity_log WHERE action = 'email_received' AND details IS NOT NULL"
+    ).all() as { details: string }[]
+    let realReplies = 0
+    for (const r of allReceived) {
+      try {
+        const d = JSON.parse(r.details)
+        const from = (d.from || '').toLowerCase()
+        const subj = (d.subject || '').toLowerCase()
+        if (autoReplyFrom.some(p => from.includes(p.toLowerCase()))) continue
+        if (autoReplySubj.some(p => subj.includes(p.toLowerCase()))) continue
+        realReplies++
+      } catch { /* skip */ }
+    }
+
+    const replyRate = totalSent > 0 ? Math.round((realReplies / totalSent) * 10000) / 100 : 0
+    const bounceRate = totalSent > 0 ? Math.round((totalBounced / totalSent) * 10000) / 100 : 0
+    const openRate = totalSent > 0 ? Math.round((totalOpened / totalSent) * 10000) / 100 : 0
+
+    // Best template: find from sequence_email_sent details which template has most opens/clicks
+    let bestTemplate: string | null = null
+    try {
+      const rows = db.prepare(
+        "SELECT details FROM activity_log WHERE action = 'sequence_email_sent' AND details IS NOT NULL"
+      ).all() as { details: string }[]
+
+      const templateScores: Record<string, number> = {}
+      for (const row of rows) {
+        try {
+          const parsed = JSON.parse(row.details)
+          if (parsed.template) {
+            templateScores[parsed.template] = (templateScores[parsed.template] || 0) + 1
+          }
+        } catch { /* skip malformed */ }
+      }
+
+      // Weight by opens and clicks if possible
+      const entries = Object.entries(templateScores)
+      if (entries.length > 0) {
+        bestTemplate = entries.sort((a, b) => b[1] - a[1])[0][0]
+      }
+    } catch { /* ignore */ }
+
+    return c.json({
+      total_sent: totalSent,
+      total_received: totalReceived,
+      total_bounced: totalBounced,
+      total_opened: totalOpened,
+      total_clicked: totalClicked,
+      reply_rate: replyRate,
+      bounce_rate: bounceRate,
+      open_rate: openRate,
+      real_replies: realReplies,
+      best_template: bestTemplate,
+      generated_at: new Date().toISOString(),
+    })
+  })
+
+  // ── Overview Stats (single source of truth) ────────────────────────────
+
+  app.get('/api/dashboard/overview-stats', (c) => {
+    const q = (sql: string) => (db.prepare(sql).get() as { c: number }).c
+
+    const autoReplyFrom = ['MAILER-DAEMON', 'noreply', 'no-reply', 'postmaster', 'zendesk.com', 'notification.support', 'info@weblease.se', 'mail@weblease.se']
+    const autoReplySubj = ['ticket', 'autosvar', 'autoreply', 'auto-reply', 'automatische antwort', 'automatisch antwoord', 'out of office', 'abwesenheit', 'semester', 'account created', 'aktivera ditt', 'eingangsbestätigung', 'mottaget', 'received', 'ticket received']
+
+    // Leads
+    const totalLeads = q('SELECT COUNT(*) as c FROM leads')
+    const wordpress = q("SELECT COUNT(*) as c FROM leads WHERE tags LIKE '%wordpress%'")
+    const contacted = q("SELECT COUNT(*) as c FROM leads WHERE status = 'contacted'")
+    const interested = q("SELECT COUNT(*) as c FROM leads WHERE response_status = 'interested'")
+    const qualified = q("SELECT COUNT(*) as c FROM leads WHERE status = 'qualified'")
+    const converted = q("SELECT COUNT(*) as c FROM leads WHERE status = 'converted'")
+    const bounced = q("SELECT COUNT(*) as c FROM leads WHERE status = 'bounced'")
+    const declined = q("SELECT COUNT(*) as c FROM leads WHERE response_status = 'declined'")
+    const lost = q("SELECT COUNT(*) as c FROM leads WHERE status = 'lost'")
+    const newLeads = q("SELECT COUNT(*) as c FROM leads WHERE status = 'new'")
+
+    // Emails
+    const totalSent = q("SELECT COUNT(*) as c FROM activity_log WHERE action IN ('email_sent', 'sequence_email_sent')")
+    const totalReceived = q("SELECT COUNT(*) as c FROM activity_log WHERE action = 'email_received'")
+
+    // Real replies (filter out auto-replies)
+    const allReceived = db.prepare(
+      "SELECT details FROM activity_log WHERE action = 'email_received' AND details IS NOT NULL"
+    ).all() as { details: string }[]
+
+    let realReplies = 0
+    for (const r of allReceived) {
+      try {
+        const d = JSON.parse(r.details)
+        const from = (d.from || '').toLowerCase()
+        const subj = (d.subject || '').toLowerCase()
+        if (autoReplyFrom.some(p => from.includes(p.toLowerCase()))) continue
+        if (autoReplySubj.some(p => subj.includes(p.toLowerCase()))) continue
+        realReplies++
+      } catch { /* skip */ }
+    }
+
+    const responseRate = contacted > 0 ? Math.round(((interested + declined) / contacted) * 10000) / 100 : 0
+    const replyRate = totalSent > 0 ? Math.round((realReplies / totalSent) * 10000) / 100 : 0
+    const bounceRate = totalSent > 0 ? Math.round((bounced / totalSent) * 10000) / 100 : 0
+
+    return c.json({
+      leads: { total: totalLeads, wordpress, new: newLeads, contacted, interested, qualified, converted, bounced, declined, lost },
+      emails: { sent: totalSent, received: totalReceived, real_replies: realReplies, bounced, reply_rate: replyRate, bounce_rate: bounceRate, response_rate: responseRate },
+      pipeline: { new: newLeads, contacted, interested, qualified, converted },
+    })
+  })
+
+  // ── Template Stats ─────────────────────────────────────────────────────
+
+  app.get('/api/dashboard/template-stats', (c) => {
+    // Get all templates
+    const templates = db.prepare(
+      `SELECT t.id, t.name, t.type, t.product_id, p.name AS product_name
+       FROM templates t
+       LEFT JOIN products p ON p.id = t.product_id
+       ORDER BY t.name`
+    ).all() as { id: number; name: string; type: string; product_id: number | null; product_name: string | null }[]
+
+    // Parse activity_log for template usage
+    const sentRows = db.prepare(
+      "SELECT details FROM activity_log WHERE action IN ('email_sent', 'sequence_email_sent') AND details IS NOT NULL"
+    ).all() as { details: string }[]
+
+    const templateSent: Record<string, number> = {}
+    const templateTrackingIds: Record<string, string[]> = {}
+    for (const row of sentRows) {
+      try {
+        const parsed = JSON.parse(row.details)
+        const tplName = parsed.template || parsed.templateName
+        if (tplName) {
+          templateSent[tplName] = (templateSent[tplName] || 0) + 1
+          if (parsed.trackingId) {
+            if (!templateTrackingIds[tplName]) templateTrackingIds[tplName] = []
+            templateTrackingIds[tplName].push(parsed.trackingId)
+          }
+        }
+      } catch { /* skip */ }
+    }
+
+    // Count replies per template (from email_received where lead was previously sent template)
+    const replyRows = db.prepare(
+      "SELECT lead_id FROM activity_log WHERE action = 'email_received' AND lead_id IS NOT NULL AND details NOT LIKE '%MAILER-DAEMON%'"
+    ).all() as { lead_id: number }[]
+    const replyLeadIds = new Set(replyRows.map(r => r.lead_id))
+
+    // For each template, count opens and clicks from tracking
+    const stats = templates.map(t => {
+      const sent = templateSent[t.name] || 0
+      let opens = 0
+      let clicks = 0
+
+      const trackingIds = templateTrackingIds[t.name] || []
+      if (trackingIds.length > 0) {
+        // Check open/click tracking for these tracking IDs
+        for (const tid of trackingIds) {
+          const openRow = db.prepare(
+            "SELECT COUNT(*) as c FROM email_tracking WHERE tracking_id = ? AND type = 'open' AND triggered_at IS NOT NULL"
+          ).get(tid + ':open') as { c: number }
+          opens += openRow.c
+
+          const clickRow = db.prepare(
+            "SELECT COUNT(*) as c FROM email_tracking WHERE tracking_id = ? AND type = 'click' AND triggered_at IS NOT NULL"
+          ).get(tid + ':click') as { c: number }
+          clicks += clickRow.c
+        }
+      }
+
+      // Replies: count leads that both received this template AND replied
+      let replies = 0
+      if (trackingIds.length > 0) {
+        for (const tid of trackingIds) {
+          const sentTrack = db.prepare(
+            "SELECT lead_id FROM email_tracking WHERE tracking_id LIKE ? AND type = 'sent'"
+          ).get(tid + '%') as { lead_id: number } | undefined
+          if (sentTrack && replyLeadIds.has(sentTrack.lead_id)) {
+            replies++
+          }
+        }
+      }
+
+      return {
+        template_name: t.name,
+        product_name: t.product_name,
+        type: t.type,
+        sent,
+        opens,
+        clicks,
+        replies,
+      }
+    })
+
+    return c.json(stats)
   })
 
   return app

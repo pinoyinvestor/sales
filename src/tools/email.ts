@@ -73,9 +73,11 @@ export function registerEmailTools(
       track_opens:   z.boolean().optional().default(false).describe('Inject a 1x1 tracking pixel'),
       track_clicks:  z.boolean().optional().default(false).describe('Rewrite links with click-tracking URLs'),
       lead_id:       z.number().optional().describe('Lead ID to associate with this email'),
+      template_id:   z.number().optional().describe('Template ID used (for A/B tracking)'),
+      variant:       z.string().optional().describe('A/B variant name (for tracking)'),
     },
     async (params) => {
-      // 1. GDPR — check for unsubscribe
+      // 1a. GDPR — check for unsubscribe
       const unsub = db
         .prepare<[string, string], { id: number } | undefined>(
           "SELECT id FROM gdpr_log WHERE email = ? AND action = ? ORDER BY created_at DESC LIMIT 1",
@@ -91,6 +93,43 @@ export function registerEmailTools(
               error: `${params.to} has unsubscribed — email blocked`,
             }),
           }],
+        }
+      }
+
+      // 1b. Opt-out check — respect leads who declined
+      const lead = db
+        .prepare<[string], { id: number; opted_out: number; response_status: string | null; last_emailed_at: string | null } | undefined>(
+          "SELECT id, opted_out, response_status, last_emailed_at FROM leads WHERE email = ?",
+        )
+        .get(params.to)
+
+      if (lead?.opted_out || lead?.response_status === 'declined') {
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              sent:  false,
+              error: `${params.to} has opted out or declined — email blocked. Respecting their decision.`,
+            }),
+          }],
+        }
+      }
+
+      // 1c. 6-month cooldown — don't email same person within 6 months
+      if (lead?.last_emailed_at) {
+        const lastEmailed = new Date(lead.last_emailed_at)
+        const sixMonthsAgo = new Date()
+        sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6)
+        if (lastEmailed > sixMonthsAgo && lead.response_status === 'none') {
+          return {
+            content: [{
+              type: 'text',
+              text: JSON.stringify({
+                sent:  false,
+                error: `${params.to} was emailed on ${lead.last_emailed_at} — 6-month cooldown active. Next allowed: ${new Date(lastEmailed.getTime() + 180 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}`,
+              }),
+            }],
+          }
         }
       }
 
@@ -134,15 +173,41 @@ export function registerEmailTools(
       const unsubLink = `${unsubscribeUrl}/${emailHash}`
       html += `\n<p style="font-size:11px;color:#999;margin-top:20px;">Vill du inte få fler mail? <a href="${unsubLink}">Avregistrera dig här</a></p>`
 
-      // 5. Send
-      const result = await emailProvider.sendEmail({
-        to:      params.to,
-        subject: params.subject,
-        html,
-        headers: {
-          'List-Unsubscribe': `<${unsubLink}>`,
-        },
-      })
+      // 5. Send + log result
+      let result: { messageId: string }
+      try {
+        result = await emailProvider.sendEmail({
+          to:      params.to,
+          subject: params.subject,
+          html,
+          headers: {
+            'List-Unsubscribe': `<${unsubLink}>`,
+          },
+        })
+
+        // Log success (with A/B tracking)
+        db.prepare(
+          `INSERT INTO email_log (lead_id, to_email, subject, status, message_id, template_id, variant, created_at)
+           VALUES (?, ?, ?, 'sent', ?, ?, ?, datetime('now'))`,
+        ).run(lead?.id ?? params.lead_id ?? null, params.to, params.subject, result.messageId, params.template_id ?? null, params.variant ?? null)
+
+      } catch (sendError: any) {
+        // Log failure
+        db.prepare(
+          `INSERT INTO email_log (lead_id, to_email, subject, status, error_message, created_at)
+           VALUES (?, ?, ?, 'failed', ?, datetime('now'))`,
+        ).run(lead?.id ?? params.lead_id ?? null, params.to, params.subject, sendError?.message ?? 'Unknown error')
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              sent:  false,
+              error: `Failed to send to ${params.to}: ${sendError?.message ?? 'Unknown error'}`,
+            }),
+          }],
+        }
+      }
 
       // 6. Insert email_tracking rows
       const insertTracking = db.prepare(
@@ -166,7 +231,14 @@ export function registerEmailTools(
         productId = prod?.id ?? null
       }
 
-      // 8. Log activity
+      // 8. Update last_emailed_at on lead
+      if (lead) {
+        db.prepare('UPDATE leads SET last_emailed_at = datetime("now"), last_contacted_at = datetime("now"), updated_at = datetime("now") WHERE id = ?').run(lead.id)
+      } else if (params.lead_id) {
+        db.prepare('UPDATE leads SET last_emailed_at = datetime("now"), last_contacted_at = datetime("now"), updated_at = datetime("now") WHERE id = ?').run(params.lead_id)
+      }
+
+      // 9. Log activity
       db.prepare(
         `INSERT INTO activity_log (product_id, lead_id, channel_id, action, details, created_at)
          VALUES (?, ?, ?, 'email_sent', ?, datetime('now'))`,
@@ -227,6 +299,51 @@ export function registerEmailTools(
           type: 'text',
           text: JSON.stringify({ sent: true, messageId: result.messageId }),
         }],
+      }
+    },
+  )
+
+  // ── Tool 4: get_email_log ───────────────────────────────────────────────
+
+  server.tool(
+    'get_email_log',
+    'View email send history — see sent, failed, bounced, and blocked emails. Use this to check delivery status and find problems.',
+    {
+      status:  z.enum(['all', 'sent', 'failed', 'bounced', 'blocked']).optional().default('all').describe('Filter by status'),
+      limit:   z.number().optional().default(50).describe('Max results'),
+      email:   z.string().optional().describe('Filter by recipient email'),
+    },
+    async (params) => {
+      let query = 'SELECT el.*, l.name as lead_name, l.company FROM email_log el LEFT JOIN leads l ON el.lead_id = l.id'
+      const conditions: string[] = []
+      const values: any[] = []
+
+      if (params.status !== 'all') {
+        conditions.push('el.status = ?')
+        values.push(params.status)
+      }
+      if (params.email) {
+        conditions.push('el.to_email = ?')
+        values.push(params.email)
+      }
+
+      if (conditions.length) query += ' WHERE ' + conditions.join(' AND ')
+      query += ' ORDER BY el.created_at DESC LIMIT ?'
+      values.push(params.limit)
+
+      const rows = db.prepare(query).all(...values)
+
+      const summary = {
+        total: rows.length,
+        sent: rows.filter((r: any) => r.status === 'sent').length,
+        failed: rows.filter((r: any) => r.status === 'failed').length,
+        bounced: rows.filter((r: any) => r.status === 'bounced').length,
+        blocked: rows.filter((r: any) => r.status === 'blocked').length,
+        entries: rows,
+      }
+
+      return {
+        content: [{ type: 'text', text: JSON.stringify(summary, null, 2) }],
       }
     },
   )

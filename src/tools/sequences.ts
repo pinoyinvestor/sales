@@ -3,9 +3,14 @@ import { z } from 'zod'
 import Database from 'better-sqlite3'
 
 interface SequenceStep {
-  day: number
-  template_name: string
-  channel_type: string
+  order?: number
+  type?: string
+  delay_hours?: number
+  template?: string
+  day?: number
+  template_name?: string
+  channel_type?: string
+  [key: string]: unknown
 }
 
 interface Sequence {
@@ -200,7 +205,8 @@ export function registerSequenceTools(server: McpServer, db: Database.Database):
       const now = new Date()
       if (lead.last_contacted_at !== null) {
         const lastContacted = new Date(lead.last_contacted_at)
-        const dueDate = new Date(lastContacted.getTime() + currentStep.day * 24 * 60 * 60 * 1000)
+        const delayMs = currentStep.delay_hours !== undefined ? currentStep.delay_hours * 60 * 60 * 1000 : (currentStep.day || 0) * 24 * 60 * 60 * 1000
+        const dueDate = new Date(lastContacted.getTime() + delayMs)
         if (now < dueDate) {
           return {
             content: [{
@@ -377,7 +383,8 @@ export function registerSequenceTools(server: McpServer, db: Database.Database):
           dueDate = new Date(0)
         } else {
           const lastContacted = new Date(row.last_contacted_at)
-          dueDate = new Date(lastContacted.getTime() + nextStep.day * 24 * 60 * 60 * 1000)
+          const stepDelayMs = nextStep.delay_hours !== undefined ? nextStep.delay_hours * 60 * 60 * 1000 : (nextStep.day || 0) * 24 * 60 * 60 * 1000
+          dueDate = new Date(lastContacted.getTime() + stepDelayMs)
         }
 
         if (now >= dueDate) {

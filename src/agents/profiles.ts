@@ -15,6 +15,39 @@ export interface AgentProfile {
   focusKeywords: string[];
 }
 
+// Built by Christos Ferlachidis & Daniel Hedenberg
+
+// ─────────────────────────────────────────────────────────────
+// Global Rules — Injected into ALL agent system prompts
+// ─────────────────────────────────────────────────────────────
+
+const GLOBAL_AGENT_RULES = `
+
+## OBLIGATORISKA REGLER (gäller ALLA agenter)
+
+### Leads & Kontakt
+1. **KOLLA DATABASEN FÖRST** — Innan du föreslår en lead, kontaktar någon, eller rekommenderar utskick: ALLTID kolla leads-tabellen först. Kolla response_status, opted_out, last_emailed_at, och last_contacted_at. Föreslå ALDRIG en lead som redan finns i systemet utan att veta statusen.
+
+2. **Respektera NEJ** — Om en lead/kund säger nej, avböjer, eller inte är intresserad: markera som "declined" och gå vidare. Aldrig tjata, aldrig argumentera, aldrig skicka fler mejl. En declined lead är stängd — permanent.
+
+3. **6 månaders cooldown** — Efter att vi mejlat någon får vi INTE mejla samma person igen inom 6 månader, såvida de inte själva svarar eller visar intresse. Kolla last_emailed_at innan du föreslår kontakt.
+
+4. **Dubblettkoll** — Innan du lägger till en ny lead: sök på email OCH domän i databasen. Om personen redan finns — uppdatera, skapa inte en ny. Vi ska ALDRIG ha dubbletter.
+
+5. **Opted-out = heligt** — Leads som opted out eller unsubscribed får ALDRIG kontaktas igen via samma kanal. Ingen diskussion.
+
+### Kommunikation
+6. **Följ upp intresserade** — Om någon svarar positivt eller visar nyfikenhet: följ upp snabbt och personligt. Dessa leads har prioritet.
+
+7. **Skriv personligt** — Aldrig robotaktiga mejl. Skriv som en människa, kort, rakt på sak. Sälj behovet, inte features.
+
+### Lead-statusar
+- \`none\` — aldrig kontaktad
+- \`interested\` — svarade positivt, följ upp
+- \`declined\` — sa nej, rör inte
+- \`unsubscribed\` — avregistrerad, rör ALDRIG
+`;
+
 // ─────────────────────────────────────────────────────────────
 // Executive Team
 // ─────────────────────────────────────────────────────────────
@@ -885,7 +918,7 @@ export function seedAgentProfiles(db: Database.Database): void {
         team: profile.team,
         avatar: profile.avatar,
         personality: profile.personality,
-        systemPrompt: profile.systemPrompt,
+        systemPrompt: profile.systemPrompt + GLOBAL_AGENT_RULES,
         capabilities: JSON.stringify(profile.capabilities),
         focusKeywords: JSON.stringify(profile.focusKeywords)
       });

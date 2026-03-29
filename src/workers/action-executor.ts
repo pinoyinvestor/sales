@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3'
 import type { SalesConfig } from '../utils/config.js'
 import { createEmailProvider } from '../providers/email-provider.js'
+// Telegram notifications removed from action executor
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -277,6 +278,7 @@ async function processApprovedActions(db: Database.Database, config: SalesConfig
 
       markExecuted(db, action.id, result)
       console.log(`[action-executor] Executed #${action.id} (${action.action_type}) by ${action.agent_name}: ${result}`)
+
 
     } catch (err) {
       const errorMsg = (err as Error).message

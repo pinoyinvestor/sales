@@ -83,10 +83,21 @@ export function getDb(dbPath: string): Database.Database {
     "ALTER TABLE learnings ADD COLUMN source TEXT DEFAULT 'manual'",
     'ALTER TABLE learnings ADD COLUMN shared_with TEXT',
     'ALTER TABLE discussions ADD COLUMN team TEXT',
+    'ALTER TABLE discussions ADD COLUMN archived INTEGER DEFAULT 0',
     "ALTER TABLE products ADD COLUMN onboarding_status TEXT DEFAULT 'pending'",
     'ALTER TABLE products ADD COLUMN target_market TEXT',
     "ALTER TABLE products ADD COLUMN target_language TEXT DEFAULT 'sv'",
     'ALTER TABLE products ADD COLUMN brand_voice TEXT',
+    'ALTER TABLE leads ADD COLUMN score INTEGER DEFAULT 0',
+    // A/B testing support
+    'ALTER TABLE templates ADD COLUMN variant TEXT',
+    'ALTER TABLE templates ADD COLUMN variant_group TEXT',
+    'ALTER TABLE email_log ADD COLUMN template_id INTEGER',
+    'ALTER TABLE email_log ADD COLUMN variant TEXT',
+    'ALTER TABLE email_log ADD COLUMN opened_at DATETIME',
+    'ALTER TABLE email_log ADD COLUMN clicked_at DATETIME',
+    // Inbound lead capture
+    'ALTER TABLE leads ADD COLUMN source_detail TEXT',
   ]
   // Built by Christos Ferlachidis & Daniel Hedenberg
   for (const sql of alterations) {

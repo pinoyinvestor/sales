@@ -36,6 +36,12 @@ export interface DashboardApiConfig {
   admin_key: string;
 }
 
+export interface TelegramConfig {
+  bot_token: string;
+  chat_id: string;
+  enabled: boolean;
+}
+
 export interface SalesConfig {
   email: EmailConfig;
   database: DatabaseConfig;
@@ -43,6 +49,7 @@ export interface SalesConfig {
   dashboard_api: DashboardApiConfig;
   default_language: string;
   retention_days: number;
+  telegram?: TelegramConfig;
 }
 
 let cached: SalesConfig | null = null;

@@ -1,7 +1,8 @@
 import { ImapFlow } from 'imapflow'
+import { simpleParser } from 'mailparser'
 import type Database from 'better-sqlite3'
 import type { SalesConfig } from '../utils/config.js'
-import { cleanSnippet } from '../utils/email.js'
+import { sendTelegram, formatNewEmail } from '../providers/telegram.js'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -50,62 +51,95 @@ async function processNewEmails(db: Database.Database, config: SalesConfig): Pro
 
     for await (const msg of client.fetch(uidRange, { envelope: true, source: true, flags: true }, { uid: true })) {
       const envelope = msg.envelope
-      const source   = msg.source?.toString('utf-8') ?? ''
       const fromAddr = envelope?.from?.[0]?.address ?? 'unknown'
       const subject  = envelope?.subject ?? '(inget ämne)'
       const date     = envelope?.date?.toISOString() ?? new Date().toISOString()
 
-      // Extract a plain text snippet (first 200 chars of body, MIME-cleaned)
-      const bodyMatch = source.match(/\r?\n\r?\n([\s\S]*)/)
-      const rawBody   = bodyMatch ? bodyMatch[1] : ''
-      const snippet   = cleanSnippet(
-        rawBody.replace(/<[^>]+>/g, ' ')
-      ).slice(0, 200)
+      // Parse MIME properly to get clean text
+      let snippet = ''
+      try {
+        const parsed = await simpleParser(msg.source as Buffer)
+        snippet = (parsed.text || parsed.html?.replace(/<[^>]+>/g, ' ') || '').replace(/\s+/g, ' ').trim().slice(0, 300)
+      } catch {
+        // Fallback to raw extraction
+        const source = msg.source?.toString('utf-8') ?? ''
+        const bodyMatch = source.match(/\r?\n\r?\n([\s\S]*)/)
+        snippet = (bodyMatch ? bodyMatch[1] : '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200)
+      }
 
       messages.push({ uid: msg.uid, from: fromAddr, subject, snippet, date })
     }
 
     // Process each message
+    const now = new Date().toISOString()
+
     const insertActivity = db.prepare(
       `INSERT INTO activity_log (product_id, lead_id, channel_id, action, details, created_at)
-       VALUES (NULL, ?, NULL, 'email_received', ?, datetime('now'))`
+       VALUES (NULL, ?, NULL, 'email_received', ?, ?)`
     )
 
     const insertRecommendation = db.prepare(
       `INSERT INTO recommendations (product_id, agent_role, priority, title, description, action_type, action_data, status, created_at)
-       VALUES (NULL, 'inbox_reader', 'medium', ?, ?, 'create_lead', ?, 'pending', datetime('now'))`
+       VALUES (NULL, 'inbox_reader', ?, ?, ?, 'create_lead', ?, 'pending', ?)`
     )
 
-    const updateLastContacted = db.prepare(
-      `UPDATE leads SET last_contacted_at = datetime('now'), updated_at = datetime('now') WHERE email = ?`
+    const findLead = db.prepare<[string], { id: number; name: string | null; status: string; response_status: string | null } | undefined>(
+      `SELECT id, name, status, response_status FROM leads WHERE email = ? LIMIT 1`
     )
 
-    const findLead = db.prepare<[string], { id: number } | undefined>(
-      `SELECT id FROM leads WHERE email = ? LIMIT 1`
-    )
+    // Auto-categorization keywords
+    const declineWords = ['no thank', 'not interested', 'unsubscribe', 'remove me', 'stop emailing', 'don\'t contact', 'no longer', 'not running wordpress', 'unfortunately', 'opted out', 'please remove']
+    const interestWords = ['interested', 'tell me more', 'sounds good', 'demo', 'try it', 'how does it work', 'pricing', 'let\'s talk', 'schedule', 'show me', 'curious', 'want to test', 'sign me up', 'how much']
 
     for (const msg of messages) {
-      const lead = findLead.get(msg.from)
+      // Skip bounce/system messages
+      if (msg.from.includes('MAILER-DAEMON') || msg.from.includes('postmaster@') || msg.from.includes('noreply@')) continue
 
-      const details = JSON.stringify({
-        from:    msg.from,
-        subject: msg.subject,
-        snippet: msg.snippet,
-        date:    msg.date,
-      })
+      const lead = findLead.get(msg.from)
+      const details = JSON.stringify({ from: msg.from, subject: msg.subject, snippet: msg.snippet, date: msg.date })
 
       // Store in activity_log
-      insertActivity.run(lead?.id ?? null, details)
+      insertActivity.run(lead?.id ?? null, details, now)
 
       if (lead) {
-        // Existing lead — update last_contacted_at
-        updateLastContacted.run(msg.from)
+        const text = (msg.subject + ' ' + msg.snippet).toLowerCase()
+        const isDecline = declineWords.some(kw => text.includes(kw))
+        const isInterest = interestWords.some(kw => text.includes(kw))
+
+        if (isDecline) {
+          db.prepare('UPDATE leads SET response_status = ?, last_contacted_at = ?, updated_at = ? WHERE id = ?')
+            .run('declined', now, now, lead.id)
+          console.log(`[inbox-reader] Auto-declined: ${msg.from}`)
+          sendTelegram(`❌ ${lead.name || msg.from} avböjde: "${msg.snippet.substring(0, 80)}"`).catch(() => {})
+
+        } else if (isInterest) {
+          db.prepare('UPDATE leads SET response_status = ?, status = ?, last_contacted_at = ?, updated_at = ? WHERE id = ?')
+            .run('interested', 'qualified', now, now, lead.id)
+          console.log(`[inbox-reader] Auto-interested: ${msg.from}`)
+          sendTelegram(`🔥 ${lead.name || msg.from} ÄR INTRESSERAD: "${msg.snippet.substring(0, 80)}"\n\nSvara snabbt!`).catch(() => {})
+
+          // Create high-priority follow-up recommendation
+          insertRecommendation.run('high',
+            `🔥 ${lead.name || msg.from} visar intresse!`,
+            `"${msg.snippet.substring(0, 120)}" — Svara snabbt och personligt!`,
+            JSON.stringify({ email: msg.from, lead_id: lead.id, action: 'follow_up' }),
+            now
+          )
+
+        } else {
+          db.prepare('UPDATE leads SET last_contacted_at = ?, updated_at = ? WHERE id = ?')
+            .run(now, now, lead.id)
+          sendTelegram(`📨 Svar från ${lead.name || msg.from}: "${msg.snippet.substring(0, 100)}"`).catch(() => {})
+        }
       } else {
-        // Unknown sender — create recommendation
-        const title = `Ny email från ${msg.from}`
-        const description = `Ny email från ${msg.from} — ämne: ${msg.subject}. Skapa lead?`
-        const actionData = JSON.stringify({ email: msg.from, subject: msg.subject })
-        insertRecommendation.run(title, description, actionData)
+        // Unknown sender
+        sendTelegram(formatNewEmail(msg.from, msg.subject)).catch(() => {})
+        insertRecommendation.run('medium',
+          `Ny email från ${msg.from}`,
+          `Ämne: ${msg.subject}. "${msg.snippet.substring(0, 100)}"`,
+          JSON.stringify({ email: msg.from, subject: msg.subject }),
+          now
+        )
       }
 
       // Mark as seen
