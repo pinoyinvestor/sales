@@ -108,15 +108,17 @@ try {
   console.error('Dashboard port unavailable, MCP tools still active')
 }
 
-// Start workers
-startInboxReader(db, config)
-startAutonomousRunner(db, config)
-startActionExecutor(db, config)
-startWPilotMonitor(db)
-startSequenceRunner(db, config)
-startEventBus(db)
-startLeadImporter(db)
-startAgentScheduler(db, config)
+// Start workers — only what produces real value
+// Autonomous runner DISABLED: burns tokens with minimal output (6 actions / 58 runs)
+// Agents are available via MCP tools + meeting room when needed
+startInboxReader(db, config)       // Reads inbox every 60s — free, catches replies
+startActionExecutor(db, config)    // Executes approved actions every 30s — free
+startSequenceRunner(db, config)    // Sends follow-up emails on schedule — free
+startAgentScheduler(db, config)    // Scout/Outreach/Keeper cron tasks — free (no Claude)
+startWPilotMonitor(db)             // Tracks WPilot license stats — free
+startEventBus(db)                  // Watches activity_log — free
+startLeadImporter(db)              // Google Places import — free
+// startAutonomousRunner(db, config) // DISABLED: 16 agents * Haiku = token burn
 
 async function main() {
   const transport = new StdioServerTransport()
@@ -131,7 +133,7 @@ process.on('SIGINT', () => {
   stopSequenceRunner()
   stopWPilotMonitor()
   stopActionExecutor()
-  stopAutonomousRunner()
+  // stopAutonomousRunner() // DISABLED
   stopInboxReader()
   closeDb()
   process.exit(0)
