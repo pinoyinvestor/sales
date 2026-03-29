@@ -2138,5 +2138,162 @@ export function createDashboardApp(db: Database.Database, config: SalesConfig): 
     return c.json(stats)
   })
 
+  // ── POST /api/dashboard/run-agents — Manual agent chain (on-demand, no background tokens) ──
+  app.post('/api/dashboard/run-agents', async (c) => {
+    const body = await c.req.json().catch(() => ({})) as {
+      task?: string; agents?: string[]; product?: string
+    }
+
+    const task = body.task || 'find_leads'
+    const product = body.product || 'wpilot'
+
+    const chains: Record<string, string[]> = {
+      find_leads:    ['scout', 'outreach'],
+      review_drafts: ['copywriter', 'strategist'],
+      full_cycle:    ['scout', 'outreach', 'copywriter', 'closer', 'analyst'],
+      analyze:       ['analyst', 'strategist', 'coo'],
+    }
+
+    const agentRoles = body.agents || chains[task] || chains['find_leads']
+
+    const products = db.prepare('SELECT * FROM products').all() as { id: number; name: string; display_name: string; description: string | null }[]
+    const targetProduct = products.find(p => p.name === product)
+    const productId = targetProduct?.id || null
+
+    const leadStats = db.prepare('SELECT status, COUNT(*) as count FROM leads GROUP BY status').all()
+    const existingEmails = db.prepare('SELECT email FROM leads').all().map((r: any) => r.email)
+    const existingDomains = new Set(existingEmails.map((e: string) => e.split('@')[1]).filter(Boolean))
+    const recentLearnings = db.prepare(
+      'SELECT agent_role, category, insight FROM learnings WHERE confidence >= 0.4 ORDER BY updated_at DESC LIMIT 20'
+    ).all() as { agent_role: string; category: string; insight: string }[]
+    const knowledge = db.prepare(
+      'SELECT title, content FROM knowledge WHERE product_id = ? ORDER BY type LIMIT 5'
+    ).all(productId) as { title: string; content: string }[]
+
+    const chainResults: { role: string; name: string; output: string; actions: number }[] = []
+
+    // Uses spawn (not exec) — safe from shell injection
+    const { spawn } = await import('child_process')
+
+    function runClaude(prompt: string): Promise<string> {
+      return new Promise((resolve, reject) => {
+        const proc = spawn('/home/christaras9126/.local/bin/claude', [
+          '-p', prompt, '--max-turns', '3', '--model', 'haiku',
+        ], {
+          env: { ...process.env, HOME: '/home/christaras9126' },
+          timeout: 90000,
+          stdio: ['pipe', 'pipe', 'pipe'],
+        })
+        proc.stdin.end()
+        let out = '', err = ''
+        proc.stdout.on('data', (d: Buffer) => { out += d })
+        proc.stderr.on('data', (d: Buffer) => { err += d })
+        proc.on('close', (code: number | null) => {
+          if (code === 0 && out.trim()) resolve(out.trim())
+          else reject(new Error(err || `exit ${code}`))
+        })
+        proc.on('error', reject)
+      })
+    }
+
+    function parseActions(response: string): { type: string; data: Record<string, unknown> }[] {
+      const actions: { type: string; data: Record<string, unknown> }[] = []
+      const regex = /ACTION:(\w+)\s*(\{[^}]+\})/g
+      let match: RegExpExecArray | null
+      while ((match = regex.exec(response)) !== null) {
+        try { actions.push({ type: match[1], data: JSON.parse(match[2]) }) } catch {}
+      }
+      return actions
+    }
+
+    for (const role of agentRoles) {
+      const profile = db.prepare('SELECT name, system_prompt FROM agent_profiles WHERE role = ?').get(role) as { name: string; system_prompt: string } | undefined
+      if (!profile) continue
+
+      const previousWork = chainResults.length > 0
+        ? '\n\nTIDIGARE AGENTER (bygg vidare!):\n' +
+          chainResults.map(r => `--- ${r.name} (${r.role}) ${r.actions} actions ---\n${r.output.substring(0, 400)}`).join('\n\n')
+        : ''
+
+      const systemPrompt = profile.system_prompt
+        .replace('{{PRODUCT_CONTEXT}}', `\nFOKUS: ${targetProduct?.display_name || product}\n${targetProduct?.description || ''}`)
+        .replace('{{LEARNINGS}}', recentLearnings.map(l => `[${l.agent_role}/${l.category}] ${l.insight}`).join('\n'))
+        .replace('{{TEAM_KNOWLEDGE}}', knowledge.map(k => `${k.title}: ${k.content.substring(0, 200)}`).join('\n'))
+        .replace('{{CURRENT_CONTEXT}}', '')
+
+      const taskDesc = task === 'find_leads'
+        ? `Hitta nya WordPress-leads för ${targetProduct?.display_name || product}. Vi har ${existingEmails.length} leads (${existingDomains.size} domäner). Hitta HELT NYA.`
+        : task === 'review_drafts' ? 'Granska senaste email-drafts och förbättra copy/subject lines.'
+        : task === 'analyze' ? 'Analysera funnel-data och ge konkreta förbättringsförslag.'
+        : 'Full säljcykel: researcha, skriv outreach, förbered deals.'
+
+      const prompt = `${systemPrompt}
+${previousWork}
+
+UPPGIFT: ${taskDesc}
+
+LEAD-STATUS: ${JSON.stringify(leadStats)}
+BEFINTLIGA DOMÄNER (skippa!): ${[...existingDomains].slice(0, 50).join(', ')}... (${existingDomains.size} totalt)
+
+LEARNINGS:
+${recentLearnings.map(l => `- ${l.insight}`).join('\n') || '(inga)'}
+
+ACTION-FORMAT:
+- ACTION:create_lead{"email":"x@y.com","name":"Namn","company":"Företag","product_id":${productId},"source":"agent_${role}","tags":"wordpress","notes":"..."}
+- ACTION:save_learning{"category":"...","insight":"..."}
+- ACTION:create_draft{"type":"email","title":"Ämne","content":"<p>...</p>","recipient_email":"x@y.com","product_id":${productId}}
+
+REGLER: Konkret. Riktiga sidor, riktiga emails. Spara learnings. Max 500 ord. Svenska.`
+
+      try {
+        const output = await runClaude(prompt)
+        const actions = parseActions(output)
+        let actionsExecuted = 0
+
+        for (const action of actions) {
+          try {
+            if (action.type === 'create_lead' && action.data.email) {
+              const email = action.data.email as string
+              const domain = email.split('@')[1]
+              if (existingDomains.has(domain)) continue
+              if (db.prepare('SELECT id FROM leads WHERE email = ?').get(email)) continue
+              db.prepare(`INSERT INTO leads (email, name, company, product_id, source, status, tags, notes, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, 'new', ?, ?, datetime('now'), datetime('now'))`)
+                .run(email, action.data.name ?? null, action.data.company ?? null, productId, `agent_${role}`, action.data.tags ?? 'wordpress', action.data.notes ?? null)
+              existingDomains.add(domain)
+              actionsExecuted++
+            } else if (action.type === 'save_learning' && action.data.insight) {
+              db.prepare('INSERT INTO learnings (agent_role, product_id, category, insight, confidence, source) VALUES (?, ?, ?, ?, 0.5, ?)')
+                .run(role, productId, action.data.category ?? 'general', action.data.insight, 'agent_chain')
+              actionsExecuted++
+            } else if (action.type === 'create_draft' && action.data.content) {
+              db.prepare(`INSERT INTO drafts (product_id, type, title, content, recipient_email, status, created_at) VALUES (?, ?, ?, ?, ?, 'pending', datetime('now'))`)
+                .run(productId, action.data.type ?? 'email', action.data.title ?? null, action.data.content, action.data.recipient_email ?? null)
+              actionsExecuted++
+            }
+          } catch (err) { console.error(`[run-agents] Action failed:`, (err as Error).message) }
+        }
+
+        db.prepare(`INSERT INTO daily_reports (product_id, report_type, agent_role, content, period_start, period_end)
+          VALUES (?, 'manual_run', ?, ?, datetime('now'), datetime('now'))`)
+          .run(productId, role, output)
+        db.prepare('UPDATE agent_profiles SET last_action = ?, last_action_at = datetime(\'now\') WHERE role = ?')
+          .run(`Chain: ${task} (${actionsExecuted} actions)`, role)
+
+        chainResults.push({ role, name: profile.name, output, actions: actionsExecuted })
+        console.log(`[run-agents] ${profile.name} (${role}): ${actionsExecuted} actions`)
+      } catch (err) {
+        chainResults.push({ role, name: profile.name, output: `ERROR: ${(err as Error).message}`, actions: 0 })
+      }
+    }
+
+    return c.json({
+      task, product,
+      agents_run: chainResults.length,
+      total_actions: chainResults.reduce((s, r) => s + r.actions, 0),
+      results: chainResults.map(r => ({ role: r.role, name: r.name, actions: r.actions, summary: r.output.substring(0, 300) })),
+    })
+  })
+
   return app
 }
