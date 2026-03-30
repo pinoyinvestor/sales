@@ -42,8 +42,15 @@ export interface TelegramConfig {
   enabled: boolean;
 }
 
+export interface SalesEmailConfig {
+  smtp: EmailSmtpConfig;
+  user: string;
+  pass: string;
+}
+
 export interface SalesConfig {
   email: EmailConfig;
+  sales_email?: SalesEmailConfig;
   database: DatabaseConfig;
   tracking: TrackingConfig;
   dashboard_api: DashboardApiConfig;

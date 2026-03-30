@@ -32,6 +32,11 @@ export function registerEmailTools(
   emailConfig: SalesConfig,
 ) {
   const emailProvider  = createEmailProvider(emailConfig.email)
+  // Sales outreach uses sales@ email, falls back to info@
+  const salesEmailConfig = emailConfig.sales_email
+    ? { ...emailConfig.email, smtp: emailConfig.sales_email.smtp, user: emailConfig.sales_email.user, pass: emailConfig.sales_email.pass }
+    : emailConfig.email
+  const salesProvider  = createEmailProvider(salesEmailConfig)
   const trackingBase   = emailConfig.tracking.base_url
   const unsubscribeUrl = emailConfig.tracking.unsubscribe_url
 
@@ -173,10 +178,10 @@ export function registerEmailTools(
       const unsubLink = `${unsubscribeUrl}/${emailHash}`
       html += `\n<p style="font-size:11px;color:#999;margin-top:20px;">Vill du inte få fler mail? <a href="${unsubLink}">Avregistrera dig här</a></p>`
 
-      // 5. Send + log result
+      // 5. Send via sales@ for outreach, info@ for replies
       let result: { messageId: string }
       try {
-        result = await emailProvider.sendEmail({
+        result = await salesProvider.sendEmail({
           to:      params.to,
           subject: params.subject,
           html,

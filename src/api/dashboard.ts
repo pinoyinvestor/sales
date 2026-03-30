@@ -2222,7 +2222,23 @@ export function createDashboardApp(db: Database.Database, config: SalesConfig): 
         .replace('{{CURRENT_CONTEXT}}', '')
 
       const taskDesc = task === 'find_leads'
-        ? `Hitta nya WordPress-leads för ${targetProduct?.display_name || product}. Vi har ${existingEmails.length} leads (${existingDomains.size} domäner). Hitta HELT NYA.`
+        ? `Lista MINST 20 DOMÄNER till WordPress-byråer, WooCommerce-butiker och WordPress-utvecklare.
+
+Du har tränats på miljontals webbsidor. Ge mig RIKTIGA domäner du vet existerar.
+Vi har redan ${existingDomains.size} domäner — vi kollar dubbletter automatiskt, du behöver inte oroa dig
+
+KATEGORIER (blanda!):
+- WordPress-byråer (Sverige, UK, Tyskland, Frankrike, NL, Spanien, Italien, Polen, USA, Kanada, Australien)
+- WooCommerce-butiker
+- WordPress theme/plugin-företag
+- Digitala byråer som jobbar med WordPress
+
+SVARA EXAKT SÅ HÄR — en domän per rad, inget annat:
+DOMAIN:example-agency.com
+DOMAIN:another-wp-shop.de
+DOMAIN:wordpress-bureau.nl
+
+GE MINST 20 DOMÄNER. Inga förklaringar, inga introduktioner — BARA DOMAIN-rader.`
         : task === 'review_drafts' ? 'Granska senaste email-drafts och förbättra copy/subject lines.'
         : task === 'analyze' ? 'Analysera funnel-data och ge konkreta förbättringsförslag.'
         : 'Full säljcykel: researcha, skriv outreach, förbered deals.'
@@ -2247,27 +2263,80 @@ REGLER: Konkret. Riktiga sidor, riktiga emails. Spara learnings. Max 500 ord. Sv
 
       try {
         const output = await runClaude(prompt)
-        const actions = parseActions(output)
         let actionsExecuted = 0
 
+        // Parse DOMAIN: lines from agent output — then verify each one
+        const domainRegex = /DOMAIN:([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g
+        let domainMatch: RegExpExecArray | null
+        const agentDomains: string[] = []
+        while ((domainMatch = domainRegex.exec(output)) !== null) {
+          const d = domainMatch[1].toLowerCase()
+          if (!existingDomains.has(d)) agentDomains.push(d)
+        }
+
+        // Verify each domain — check WordPress + extract email
+        const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g
+        const skipEmailDomains = new Set(['sentry.io','gravatar.com','w3.org','schema.org','wordpress.org','wordpress.com','google.com','facebook.com','twitter.com','github.com','cloudflare.com','googleapis.com','gstatic.com','jquery.com','wp.com','amazon.com','stripe.com','linkedin.com','instagram.com'])
+        const bizPrefixes = ['info','hello','contact','hi','hej','kontakt','sales','support','team','mail','office','hey','hola','post']
+
+        async function fetchUrl(url: string): Promise<string | null> {
+          const ctrl = new AbortController()
+          const timer = setTimeout(() => ctrl.abort(), 12000)
+          try {
+            const res = await fetch(url, { signal: ctrl.signal, headers: { 'User-Agent': 'Mozilla/5.0' }, redirect: 'follow' })
+            const txt = await res.text()
+            clearTimeout(timer)
+            return txt
+          } catch { clearTimeout(timer); return null }
+        }
+
+        function findEmail(html: string): string | null {
+          const raw = (html.match(emailRegex) || []).map(e => e.toLowerCase())
+            .filter(e => !skipEmailDomains.has(e.split('@')[1]) && !e.includes('example') && !e.includes('domain.com') && !e.endsWith('.png') && !e.endsWith('.jpg') && !e.endsWith('.webp') && !e.endsWith('.svg') && !e.includes('noreply') && e.length < 60 && e.length > 5)
+          const good = [...new Set(raw)].filter(e => bizPrefixes.some(p => e.startsWith(p + '@')))
+          return good[0] || [...new Set(raw)].filter(e => !e.startsWith('admin@'))[0] || null
+        }
+
+        if (agentDomains.length > 0) {
+          console.log(`[run-agents] Agent found ${agentDomains.length} domains to verify`)
+          for (const d of agentDomains.slice(0, 30)) {
+            let html = await fetchUrl('https://' + d)
+            if (!html) html = await fetchUrl('https://www.' + d)
+            if (!html) continue
+
+            const isWP = html.includes('wp-content') || html.includes('wp-includes') || html.includes('wp-json') || html.includes('wordpress')
+            let email = findEmail(html)
+            if (!email) {
+              for (const p of ['/contact', '/contact-us', '/kontakt', '/about']) {
+                const ph = await fetchUrl('https://' + d + p)
+                if (ph) { email = findEmail(ph); if (email) break; }
+              }
+            }
+
+            if (email && !existingEmails.includes(email)) {
+              const name = d.split('.')[0].charAt(0).toUpperCase() + d.split('.')[0].slice(1)
+              const tags = ['wordpress', isWP ? 'wp-verified' : 'unverified'].join(',')
+              db.prepare("INSERT OR IGNORE INTO leads (email, name, company, product_id, source, status, tags, notes, score, created_at, updated_at) VALUES (?, ?, ?, ?, 'agent_verified', 'new', ?, ?, ?, datetime('now'), datetime('now'))")
+                .run(email, name, d, productId, tags, `Agent-found | ${isWP ? 'WordPress verified' : 'Not WP'} | ${d}`, isWP ? 10 : 0)
+              existingEmails.add(email)
+              existingDomains.add(d)
+              actionsExecuted++
+              console.log(`[run-agents] ${isWP ? '✓' : '~'} ${d} > ${email}`)
+            }
+            await new Promise(r => setTimeout(r, 600))
+          }
+        }
+
+        // Also parse ACTION: lines (for save_learning, create_draft etc)
+        const actions = parseActions(output)
         for (const action of actions) {
           try {
-            if (action.type === 'create_lead' && action.data.email) {
-              const email = action.data.email as string
-              const domain = email.split('@')[1]
-              if (existingDomains.has(domain)) continue
-              if (db.prepare('SELECT id FROM leads WHERE email = ?').get(email)) continue
-              db.prepare(`INSERT INTO leads (email, name, company, product_id, source, status, tags, notes, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, 'new', ?, ?, datetime('now'), datetime('now'))`)
-                .run(email, action.data.name ?? null, action.data.company ?? null, productId, `agent_${role}`, action.data.tags ?? 'wordpress', action.data.notes ?? null)
-              existingDomains.add(domain)
-              actionsExecuted++
-            } else if (action.type === 'save_learning' && action.data.insight) {
+            if (action.type === 'save_learning' && action.data.insight) {
               db.prepare('INSERT INTO learnings (agent_role, product_id, category, insight, confidence, source) VALUES (?, ?, ?, ?, 0.5, ?)')
                 .run(role, productId, action.data.category ?? 'general', action.data.insight, 'agent_chain')
               actionsExecuted++
             } else if (action.type === 'create_draft' && action.data.content) {
-              db.prepare(`INSERT INTO drafts (product_id, type, title, content, recipient_email, status, created_at) VALUES (?, ?, ?, ?, ?, 'pending', datetime('now'))`)
+              db.prepare("INSERT INTO drafts (product_id, type, title, content, recipient_email, status, created_at) VALUES (?, ?, ?, ?, ?, 'pending', datetime('now'))")
                 .run(productId, action.data.type ?? 'email', action.data.title ?? null, action.data.content, action.data.recipient_email ?? null)
               actionsExecuted++
             }
