@@ -73,12 +73,40 @@ async function processDueLeads(db: Database.Database, config: SalesConfig): Prom
 
   if (leads.length === 0) return
 
-  const emailProvider = createEmailProvider(config.email)
+  // Use sales@ for outreach, fall back to info@
+  const salesConfig = config.sales_email
+    ? { ...config.email, smtp: config.sales_email.smtp, user: config.sales_email.user, pass: config.sales_email.pass }
+    : config.email
+  const emailProvider = createEmailProvider(salesConfig)
   const now = new Date()
   const nowISO = now.toISOString()
   let sent = 0
+  const MAX_PER_DAY = 10 // Warmup: increase gradually
+
+  // Check how many we sent today
+  const todaySent = (db.prepare(
+    "SELECT COUNT(*) as c FROM activity_log WHERE action = 'sequence_email_sent' AND created_at > datetime('now', 'start of day')"
+  ).get() as { c: number }).c
+
+  if (todaySent >= MAX_PER_DAY) {
+    console.log(`[sequence-runner] Daily limit reached (${todaySent}/${MAX_PER_DAY})`)
+    return
+  }
 
   for (const lead of leads) {
+    // Stop if daily limit reached
+    if (sent + todaySent >= MAX_PER_DAY) {
+      console.log(`[sequence-runner] Daily limit reached, stopping`)
+      break
+    }
+
+    // Skip declined/opted-out (extra safety)
+    const leadCheck = db.prepare('SELECT response_status, status FROM leads WHERE id = ?').get(lead.id) as { response_status: string | null; status: string } | undefined
+    if (leadCheck?.response_status === 'declined' || leadCheck?.status === 'bounced' || leadCheck?.status === 'unsubscribed') {
+      db.prepare('UPDATE leads SET sequence_paused = 1 WHERE id = ?').run(lead.id)
+      continue
+    }
+
     let steps: SequenceStep[]
     try {
       steps = JSON.parse(lead.sequence_steps)
