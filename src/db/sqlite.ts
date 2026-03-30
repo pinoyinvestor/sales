@@ -98,6 +98,9 @@ export function getDb(dbPath: string): Database.Database {
     'ALTER TABLE email_log ADD COLUMN clicked_at DATETIME',
     // Inbound lead capture
     'ALTER TABLE leads ADD COLUMN source_detail TEXT',
+    // WordPress verification — NEVER email without this
+    'ALTER TABLE leads ADD COLUMN wp_verified INTEGER DEFAULT 0',
+    'ALTER TABLE leads ADD COLUMN wp_features TEXT',
   ]
   // Built by Christos Ferlachidis & Daniel Hedenberg
   for (const sql of alterations) {

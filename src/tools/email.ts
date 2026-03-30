@@ -101,7 +101,26 @@ export function registerEmailTools(
         }
       }
 
-      // 1b. Opt-out check — respect leads who declined
+      // 1b. WordPress verification — NEVER email non-WordPress sites
+      const wpCheck = db
+        .prepare<[string], { wp_verified: number } | undefined>(
+          "SELECT wp_verified FROM leads WHERE email = ?",
+        )
+        .get(params.to)
+
+      if (wpCheck && wpCheck.wp_verified === 0) {
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              sent:  false,
+              error: `${params.to} is NOT WordPress-verified — email blocked. Verify WordPress first.`,
+            }),
+          }],
+        }
+      }
+
+      // 1c. Opt-out check — respect leads who declined
       const lead = db
         .prepare<[string], { id: number; opted_out: number; response_status: string | null; last_emailed_at: string | null } | undefined>(
           "SELECT id, opted_out, response_status, last_emailed_at FROM leads WHERE email = ?",
